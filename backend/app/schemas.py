@@ -1,11 +1,15 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
+
+
+class PersonaDetails(BaseModel):
+    name: str = Field(min_length=2, max_length=100)
+    domain: str = Field(min_length=2, max_length=160)
 
 
 class InitRequest(BaseModel):
-    personaName: str = Field(min_length=2, max_length=100)
-    domain: str = Field(min_length=2, max_length=160)
+    persona: PersonaDetails
 
 
 class InitResponse(BaseModel):
@@ -20,8 +24,24 @@ class FeedPost(BaseModel):
     sources: list[str]
 
 
+class FeedResponse(BaseModel):
+    posts: list[FeedPost]
+
+
 class AgentSummary(BaseModel):
     id: str
     name: str
     domain: str
     createdAt: datetime
+
+
+class TelemetryDecision(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    source_url: str
+    headline: str
+    topic_key: str
+    decision: str
+    reason: str
+    score: str
+    decided_at: datetime

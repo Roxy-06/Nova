@@ -63,3 +63,27 @@ Living record of project prompts and responses. Updated as work continues.
 **User request:** Add the code currently in use directly to `vibecode.md`.
 
 **Response and action:** Embedded the core production source for API startup, routes, scheduler, editorial workflow, TTS hook, and countdown component, plus an exact implementation map for the remaining active frontend modules.
+
+## 2026-08-08 — Fix API Spec Mismatches and Connect Live Telemetry
+
+**User request:** Fix API spec mismatches to support nested custom agent initialization payload, a FeedResponse JSON dictionary containing lists of posts, and a GET /api/agent/telemetry endpoint returning SQLite topic decisions, then update the frontend to fetch real SQLite rejections.
+
+**Response and action:**
+1. Updated `schemas.py`: Nesting `PersonaDetails` under `InitRequest`. Added `FeedResponse` wrapper. Added `TelemetryDecision` mapping SQLite `TopicDecision` fields.
+2. Updated `routers/agent.py`: Initialized agents using `payload.persona.name`/`domain`. Wrapped `get_feed` responses in `FeedResponse`. Added `GET /api/agent/telemetry` endpoint returning the last 30 database decisions.
+3. Updated frontend typing (`components/types.ts`) to include `TelemetryDecision`.
+4. Updated frontend `components/TelemetryPanel.tsx` to accept the `agentId` prop, fetch real telemetry decisions, and filter them to populate the "Cutting Room Floor" live view.
+5. Adapted `page.tsx` payload structures for `/api/agent/init` and `/api/agent/feed` and linked agent id to `TelemetryPanel`.
+6. Verified frontend typescript compile builds and backend syntaxes. Updated `vibecode.md` definitions and snapshots.
+
+## 2026-08-08 — Frontend initialization failure and backend restart
+
+**User request:** Resolve the failing initialization flow on the frontend and make sure API init works end-to-end.
+
+**Response and action:**
+1. Diagnosed the frontend dev command parsing issue: `npm.cmd run dev -- --hostname 127.0.0.1 --port 3000` was interpreted as `next dev 127.0.0.1 3000`, causing `Invalid project directory: D:\Nova\frontend\127.0.0.1`.
+2. Updated `frontend/package.json` dev script to `next dev --hostname 127.0.0.1 --port 3000` so CLI args are passed correctly.
+3. Confirmed the backend was still running an old server instance and restarted `uvicorn app.main:app` from `D:\Nova\backend`.
+4. Verified `POST /api/agent/init` returned `201` with a valid `agentId` and that the frontend API URL defaulted to `http://localhost:8000`.
+5. Confirmed the local console is now accessible at `http://127.0.0.1:3000` and the backend health endpoint at `http://127.0.0.1:8000/health`.
+6. Updated `Project Context.md` and `vibecode.md` with the latest troubleshooting flow and outputs.

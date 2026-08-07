@@ -5,8 +5,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.models import Agent, Post
-from app.schemas import AgentSummary, FeedPost, InitRequest, InitResponse
+from app.models import Agent, Post, TopicDecision
+from app.schemas import (
+    AgentSummary,
+    FeedPost,
+    FeedResponse,
+    InitRequest,
+    InitResponse,
+    TelemetryDecision,
+)
 from app.services.editorial import run_editorial_cycle
 from app.services.persona import build_voice_profile
 
@@ -23,7 +30,11 @@ async def initial_cycle(agent_id: str) -> None:
 
 @router.post("/init", response_model=InitResponse, status_code=status.HTTP_201_CREATED)
 async def init_agent(payload: InitRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> InitResponse:
-    agent = Agent(name=payload.personaName.strip(), domain=payload.domain.strip(), voice_profile=build_voice_profile(payload.personaName, payload.domain))
+    agent = Agent(
+        name=payload.persona.name.strip(),
+        domain=payload.persona.domain.strip(),
+        voice_profile=build_voice_profile(payload.persona.name, payload.persona.domain),
+    )
     db.add(agent)
     db.commit()
     db.refresh(agent)
@@ -31,12 +42,25 @@ async def init_agent(payload: InitRequest, background_tasks: BackgroundTasks, db
     return InitResponse(agentId=agent.id)
 
 
-@router.get("/feed", response_model=list[FeedPost])
-def get_feed(agentId: str, db: Session = Depends(get_db)) -> list[FeedPost]:
+@router.get("/feed", response_model=FeedResponse)
+def get_feed(agentId: str, db: Session = Depends(get_db)) -> FeedResponse:
     if not db.get(Agent, agentId):
         raise HTTPException(status_code=404, detail="Unknown agentId")
     posts = db.scalars(select(Post).where(Post.agent_id == agentId).order_by(Post.created_at.desc())).all()
-    return [FeedPost(id=post.id, createdAt=post.created_at, text=post.text, rationale=post.rationale, sources=post.sources) for post in posts]
+    feed_posts = [FeedPost(id=post.id, createdAt=post.created_at, text=post.text, rationale=post.rationale, sources=post.sources) for post in posts]
+    return FeedResponse(posts=feed_posts)
+
+
+@router.get("/telemetry", response_model=list[TelemetryDecision])
+def get_telemetry(agentId: str, db: Session = Depends(get_db)):
+    if not db.get(Agent, agentId):
+        raise HTTPException(status_code=404, detail="Unknown agentId")
+    return db.scalars(
+        select(TopicDecision)
+        .where(TopicDecision.agent_id == agentId)
+        .order_by(TopicDecision.decided_at.desc())
+        .limit(30)
+    ).all()
 
 
 @router.get("/{agent_id}", response_model=AgentSummary)

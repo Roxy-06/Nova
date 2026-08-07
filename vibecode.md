@@ -9,8 +9,9 @@ Project root: `D:\Nova`
 ## Non-negotiable product requirements
 
 - Required public API:
-  - `POST /api/agent/init` accepts `{ "personaName": string, "domain": string }` and returns `{ "agentId": string }`.
-  - `GET /api/agent/feed?agentId={id}` returns newest-first posts: `{ id, createdAt, text, rationale, sources }[]`.
+  - `POST /api/agent/init` accepts `{"persona": {"name": string, "domain": string}}` and returns `{ "agentId": string }`.
+  - `GET /api/agent/feed?agentId={id}` returns `{"posts": { id, createdAt, text, rationale, sources }[]}`.
+  - `GET /api/agent/telemetry?agentId={id}` returns `TopicDecision` records: `{ source_url, headline, topic_key, decision, reason, score, decided_at }[]`.
 - The agent must operate without further prompts after initialization.
 - Every post must include clear topic-selection rationale and direct source URL(s).
 - Preserve persona voice, long-term continuity, and topic deduplication.
@@ -137,6 +138,7 @@ npm.cmd run build
 - FastAPI smoke test: init returns `201` + `agentId`; feed returns an array; missing agents return `404`.
 - Production Next.js build passed after telemetry/audio upgrades.
 - Current Next version is `15.5.9` to include the patched 15.5 release line.
+- Confirmed frontend init flow failure was caused by malformed CLI command args and stale backend process, then fixed the dev script and restarted the correct backend server.
 
 ## Known implementation notes / safe next improvements
 
@@ -193,8 +195,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.db import SessionLocal, get_db
-from app.models import Agent, Post
-from app.schemas import AgentSummary, FeedPost, InitRequest, InitResponse
+from app.models import Agent, Post, TopicDecision
+from app.schemas import AgentSummary, FeedPost, FeedResponse, InitRequest, InitResponse, TelemetryDecision
 from app.services.editorial import run_editorial_cycle
 from app.services.persona import build_voice_profile
 
@@ -207,16 +209,22 @@ async def initial_cycle(agent_id: str) -> None:
 
 @router.post("/init", response_model=InitResponse, status_code=status.HTTP_201_CREATED)
 async def init_agent(payload: InitRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> InitResponse:
-    agent = Agent(name=payload.personaName.strip(), domain=payload.domain.strip(), voice_profile=build_voice_profile(payload.personaName, payload.domain))
+    agent = Agent(name=payload.persona.name.strip(), domain=payload.persona.domain.strip(), voice_profile=build_voice_profile(payload.persona.name, payload.persona.domain))
     db.add(agent); db.commit(); db.refresh(agent)
     background_tasks.add_task(initial_cycle, agent.id)
     return InitResponse(agentId=agent.id)
 
-@router.get("/feed", response_model=list[FeedPost])
-def get_feed(agentId: str, db: Session = Depends(get_db)) -> list[FeedPost]:
+@router.get("/feed", response_model=FeedResponse)
+def get_feed(agentId: str, db: Session = Depends(get_db)) -> FeedResponse:
     if not db.get(Agent, agentId): raise HTTPException(status_code=404, detail="Unknown agentId")
     posts = db.scalars(select(Post).where(Post.agent_id == agentId).order_by(Post.created_at.desc())).all()
-    return [FeedPost(id=p.id, createdAt=p.created_at, text=p.text, rationale=p.rationale, sources=p.sources) for p in posts]
+    feed_posts = [FeedPost(id=p.id, createdAt=p.created_at, text=p.text, rationale=p.rationale, sources=p.sources) for p in posts]
+    return FeedResponse(posts=feed_posts)
+
+@router.get("/telemetry", response_model=list[TelemetryDecision])
+def get_telemetry(agentId: str, db: Session = Depends(get_db)):
+    if not db.get(Agent, agentId): raise HTTPException(status_code=404, detail="Unknown agentId")
+    return db.scalars(select(TopicDecision).where(TopicDecision.agent_id == agentId).order_by(TopicDecision.decided_at.desc()).limit(30)).all()
 
 @router.get("/{agent_id}", response_model=AgentSummary)
 def get_agent(agent_id: str, db: Session = Depends(get_db)) -> AgentSummary:
@@ -369,8 +377,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.db import SessionLocal, get_db
-from app.models import Agent, Post
-from app.schemas import AgentSummary, FeedPost, InitRequest, InitResponse
+from app.models import Agent, Post, TopicDecision
+from app.schemas import AgentSummary, FeedPost, FeedResponse, InitRequest, InitResponse, TelemetryDecision
 from app.services.editorial import run_editorial_cycle
 from app.services.persona import build_voice_profile
 
@@ -383,16 +391,22 @@ async def initial_cycle(agent_id: str) -> None:
 
 @router.post("/init", response_model=InitResponse, status_code=status.HTTP_201_CREATED)
 async def init_agent(payload: InitRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)) -> InitResponse:
-    agent = Agent(name=payload.personaName.strip(), domain=payload.domain.strip(), voice_profile=build_voice_profile(payload.personaName, payload.domain))
+    agent = Agent(name=payload.persona.name.strip(), domain=payload.persona.domain.strip(), voice_profile=build_voice_profile(payload.persona.name, payload.persona.domain))
     db.add(agent); db.commit(); db.refresh(agent)
     background_tasks.add_task(initial_cycle, agent.id)
     return InitResponse(agentId=agent.id)
 
-@router.get("/feed", response_model=list[FeedPost])
-def get_feed(agentId: str, db: Session = Depends(get_db)) -> list[FeedPost]:
+@router.get("/feed", response_model=FeedResponse)
+def get_feed(agentId: str, db: Session = Depends(get_db)) -> FeedResponse:
     if not db.get(Agent, agentId): raise HTTPException(status_code=404, detail="Unknown agentId")
     posts = db.scalars(select(Post).where(Post.agent_id == agentId).order_by(Post.created_at.desc())).all()
-    return [FeedPost(id=p.id, createdAt=p.created_at, text=p.text, rationale=p.rationale, sources=p.sources) for p in posts]
+    feed_posts = [FeedPost(id=p.id, createdAt=p.created_at, text=p.text, rationale=p.rationale, sources=p.sources) for p in posts]
+    return FeedResponse(posts=feed_posts)
+
+@router.get("/telemetry", response_model=list[TelemetryDecision])
+def get_telemetry(agentId: str, db: Session = Depends(get_db)):
+    if not db.get(Agent, agentId): raise HTTPException(status_code=404, detail="Unknown agentId")
+    return db.scalars(select(TopicDecision).where(TopicDecision.agent_id == agentId).order_by(TopicDecision.decided_at.desc()).limit(30)).all()
 
 @router.get("/{agent_id}", response_model=AgentSummary)
 def get_agent(agent_id: str, db: Session = Depends(get_db)) -> AgentSummary:

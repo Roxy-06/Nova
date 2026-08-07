@@ -22,27 +22,48 @@ export default function Home() {
   const { speak } = useVoiceAnnouncer(posts, audioEnabled);
 
   const refresh = useCallback(async (agentId: string) => {
-    const [agentResponse, feedResponse] = await Promise.all([fetch(`${API}/api/agent/${agentId}`), fetch(`${API}/api/agent/feed?agentId=${agentId}`)]);
+    const [agentResponse, feedResponse] = await Promise.all([
+      fetch(`${API}/api/agent/${agentId}`),
+      fetch(`${API}/api/agent/feed?agentId=${agentId}`)
+    ]);
     if (!agentResponse.ok || !feedResponse.ok) throw new Error("The signal could not be refreshed.");
-    setAgent(await agentResponse.json()); setPosts(await feedResponse.json());
+    const agentData = await agentResponse.json();
+    const feedData = await feedResponse.json();
+    setAgent(agentData);
+    setPosts(feedData.posts || []);
   }, []);
+
   useEffect(() => {
     if (!agent) return;
     const timer = window.setInterval(() => refresh(agent.id).catch(() => undefined), 30000);
     return () => window.clearInterval(timer);
   }, [agent, refresh]);
+
   async function initialize(event: FormEvent) {
-    event.preventDefault(); setLoading(true); setError("");
+    event.preventDefault();
+    setLoading(true);
+    setError("");
     try {
-      const response = await fetch(`${API}/api/agent/init`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ personaName: name, domain }) });
+      const response = await fetch(`${API}/api/agent/init`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persona: { name, domain } })
+      });
       if (!response.ok) throw new Error("Initialization failed.");
-      const { agentId } = await response.json(); await refresh(agentId);
-    } catch (err) { setError(err instanceof Error ? err.message : "Something went wrong."); } finally { setLoading(false); }
+      const { agentId } = await response.json();
+      await refresh(agentId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
   }
+
   const readLatest = useCallback(() => {
     const post = posts[0];
     if (post) speak(`${post.text}. Operational rationale: ${post.rationale}`);
   }, [posts, speak]);
+
   return <main>
     <div className="orb orb-one" /><div className="orb orb-two" /><div className="grid" />
     <nav><span className="mark">N</span><span className="brand">NOVA / SIGNAL NODE</span><span className="nav-status"><i /> AUTONOMOUS INTELLIGENCE</span>{agent && <AudioAnnouncer enabled={audioEnabled} onToggle={() => setAudioEnabled(value => !value)} onReadLatest={readLatest} onToggleTelemetry={() => setTelemetryOpen(value => !value)} />}</nav>
@@ -56,6 +77,6 @@ export default function Home() {
       <div className="system-bar"><span>AGENT ID <code>{agent.id.slice(0, 8)}…</code></span><span>MEMORY ACTIVE</span><CountdownTimer /><button onClick={() => refresh(agent.id)}>REFRESH ↻</button></div>
       <div className="feed-title"><p className="eyebrow">Transmission feed</p><span>NEWEST FIRST</span></div>
       {posts.length === 0 ? <div className="empty"><div className="radar" /><h2>Scanning the horizon</h2><p>The first editorial cycle is evaluating sources and rejecting weak signals.</p></div> : <div className="feed">{posts.map((post, index) => <article className="post" key={post.id}><div className="post-index">0{posts.length - index}</div><div><time>{new Date(post.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time><p className="post-text">{post.text}</p><div className="post-actions"><span>DEDUPLICATION: {99 - index}.{4 - index}% UNIQUE</span><span>SOURCE: VERIFIED</span><button onClick={() => speak(`${post.text}. Operational rationale: ${post.rationale}`)}>🔊 LISTEN</button></div><details className="rationale"><summary>WHY THIS SIGNAL <b>+</b></summary><div className="rationale-body"><p><strong>Persona alignment</strong><span>DOMAIN MATCH: {94 - index * 2}%</span></p><div className="match-bar"><i style={{ width: `${94 - index * 2}%` }} /></div><h4>Meta-reasoning</h4><ul><li>{post.rationale}</li><li>Verified against NOVA&apos;s recent editorial memory before publication.</li></ul><div className="sources">{post.sources.map((source) => <a key={source} href={source} target="_blank" rel="noreferrer">PRIMARY SOURCE ↗</a>)}</div></div></details></div></article>)}</div>}
-    </section>}<TelemetryPanel open={telemetryOpen} onClose={() => setTelemetryOpen(false)} />
+    </section>}<TelemetryPanel agentId={agent?.id} open={telemetryOpen} onClose={() => setTelemetryOpen(false)} />
   </main>;
 }
