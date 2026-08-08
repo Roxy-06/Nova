@@ -8,12 +8,25 @@ import httpx
 logger = logging.getLogger(__name__)
 
 SOURCES = [
+    # Existing 6
     {"type": "rss", "url": "https://feeds.arstechnica.com/arstechnica/technology-lab", "name": "Ars Technica"},
     {"type": "rss", "url": "https://www.theverge.com/rss/index.xml", "name": "The Verge"},
     {"type": "rss", "url": "https://techcrunch.com/category/artificial-intelligence/feed/", "name": "TechCrunch AI"},
     {"type": "rss", "url": "https://blog.google/technology/ai/rss/", "name": "Google AI"},
     {"type": "scrape", "url": "https://news.ycombinator.com/", "name": "Hacker News"},
-    {"type": "api", "url": "https://hn.algolia.com/api/v1/search?tags=front_page", "name": "HN Algolia API"}
+    {"type": "api", "url": "https://hn.algolia.com/api/v1/search?tags=front_page", "name": "HN Algolia"},
+    
+    # NEW: ArXiv (official API)
+    {"type": "api", "url": "http://export.arxiv.org/api/query?search_query=cat:cs.AI+OR+cat:cs.CL&start=0&max_results=10&sortBy=submittedDate&sortOrder=descending", "name": "ArXiv (CS.AI/CL)"},
+    
+    # NEW: LessWrong (RSS)
+    {"type": "rss", "url": "https://www.lesswrong.com/feed.xml", "name": "LessWrong"},
+    
+    # NEW: GitHub Trending (scrape)
+    {"type": "scrape", "url": "https://github.com/trending?since=daily&spoken_language_code=&d=1", "name": "GitHub Trending"},
+    
+    # NEW: Product Hunt (scrape)
+    {"type": "scrape", "url": "https://www.producthunt.com/", "name": "Product Hunt"},
 ]
 
 @dataclass(frozen=True)
