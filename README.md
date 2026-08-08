@@ -15,38 +15,6 @@ No further prompts required after initialization. The system runs autonomously e
 
 ## Honest Status: 8.0/10
 
-### What Works Well ✅
-
-- **Real LLM evaluation:** Backend calls Gemini API with structured JSON schemas for semantic scoring
-- **Multi-source discovery:** RSS feeds (Ars Technica, The Verge, TechCrunch), web scraping (Hacker News), API ingestion (HN Algolia)
-- **Smart deduplication:** Word overlap detection across 12 prior posts + source URL uniqueness constraint
-- **Live telemetry:** Frontend displays real backend decisions with credibility/relevance/depth/novelty breakdowns
-- **Dual-view UI:** "Public Persona Feed" (narrative) + "Operator Control Room" (audit trail)
-- **Type safety:** End-to-end Pydantic (backend) + TypeScript (frontend)
-- **Auto-scheduling:** APScheduler runs 6-hourly editorial cycles autonomously
-- **Voice interface:** Browser TTS announces new posts; speech recognition for voice commands
-
-### What's Missing ⚠️
-
-- **No publishing:** Posts live in SQLite only. No email, Telegram, RSS export, or webhooks
-- **No feedback loop:** System can't learn from editorial performance. No user rating mechanism
-- **Placeholder metrics:** Public feed shows hardcoded uniqueness % instead of real scores
-- **Requires GEMINI_API_KEY:** Falls back to weaker keyword-based scoring if env var is missing
-- **Telemetry logs are transient:** System logs disappear on browser refresh (not persisted to DB)
-- **Voice commands are unreliable:** Browser speech recognition varies by device; only 2 commands
-
-### Why 8.0 and Not Higher
-
-The backend editorial logic is **genuinely sophisticated** (Gemini LLM + semantic dimensions). The frontend **correctly visualizes real decisions**. But the system is a **private editorial journal, not a published news service**.
-
-A true autonomous system needs:
-1. **Distribution** (email, RSS, webhooks, social)
-2. **Feedback** (user ratings that retrain weights)
-3. **Persistence** (logs, metrics, performance tracking)
-
-Without these, it's a beautiful curator with no audience.
-
----
 
 ## Architecture
 
