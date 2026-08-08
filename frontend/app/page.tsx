@@ -3,11 +3,20 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { AudioAnnouncer } from "./components/AudioAnnouncer";
 import { CountdownTimer } from "./components/CountdownTimer";
+import { PendingQueue } from "./components/PendingQueue";
 import { TelemetryPanel } from "./components/TelemetryPanel";
 import type { FeedPost, TelemetryResponse } from "./components/types";
 import { useVoiceAnnouncer } from "./components/useVoiceAnnouncer";
 
-type Agent = { id: string; name: string; domain: string; createdAt: string };
+type Agent = {
+  id: string;
+  name: string;
+  domain: string;
+  createdAt: string;
+  personaThroughline?: string | null;
+  personaBiases?: string[];
+  personaSignatureMove?: string | null;
+};
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export default function Home() {
@@ -156,6 +165,11 @@ export default function Home() {
                 {agent.name}<span>.</span>
               </h1>
               <p>{agent.domain}</p>
+              {agent.personaThroughline && (
+                <p style={{ fontSize: "12px", color: "var(--muted)", maxWidth: 560, marginTop: 6 }}>
+                  <strong style={{ color: "var(--lime)" }}>Throughline:</strong> {agent.personaThroughline}
+                </p>
+              )}
             </div>
             <button className="telemetry-launch" onClick={() => setTelemetryOpen(true)}>
               ◫ OPEN THOUGHT MATRIX
@@ -165,21 +179,31 @@ export default function Home() {
           <div className="system-bar">
             <span>AGENT ID <code>{agent.id.slice(0, 8)}…</code></span>
             <span>MEMORY ACTIVE</span>
-            <CountdownTimer />
+            <CountdownTimer
+              nextPublishAt={telemetryData?.next_publish_at ?? null}
+              queueSize={telemetryData?.queue_size ?? 0}
+            />
             <button onClick={() => refresh(agent.id)}>REFRESH ↻</button>
           </div>
 
-          {/* Sleek Active Scanning Banner */}
+          {/* Live scanning banner -- text reflects the backend's actual
+              scan_status at all times, no placeholder/fake copy. */}
           {telemetryData && (
             <div className={`scanning-banner ${telemetryData.scan_status === "idle" ? "idle" : ""}`}>
               <span className="banner-pulse" />
               <span>
                 {telemetryData.scan_status === "idle"
-                  ? "SYSTEM ACTIVE // STANDBY CONTROL MODE... DEDUPLICATION ACTIVE"
-                  : `SCANNING: ${telemetryData.active_source_url || "broad web targets"} ... ${telemetryData.scan_status.toUpperCase()} CHUNK #${telemetryData.chunks_processed}`}
+                  ? telemetryData.queue_size > 0
+                    ? `WAITING TO PUBLISH — ${telemetryData.queue_size} DRAFT${telemetryData.queue_size === 1 ? "" : "S"} QUEUED, SCANNING RESUMES SHORTLY`
+                    : "NO NEW CANDIDATES FROM SOURCES YET — WILL RE-CHECK SHORTLY"
+                  : telemetryData.scan_status === "drafting"
+                  ? `DRAFTING TAKE ON: ${telemetryData.active_source_url || "current candidate"}`
+                  : `SCANNING: ${telemetryData.active_source_url || "broad web targets"} — ${telemetryData.scan_status.toUpperCase()} (${telemetryData.chunks_processed} new this pass)`}
               </span>
             </div>
           )}
+
+          {telemetryData && <PendingQueue queue={telemetryData.queue} />}
 
           {/* Dual-View Feed Toggle */}
           <div className="view-toggle-bar">

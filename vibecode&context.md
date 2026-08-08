@@ -8,6 +8,52 @@
 
 ---
 
+## ⚠️ READ THIS FIRST (2026-08-08, Session 6): Current Pipeline Shape
+
+This file has grown across six sessions and several sections below are
+explicitly marked stale. Here is the actual current shape of the system,
+which supersedes anything below that conflicts with it. See `Prompts.md`
+Sessions 3-6 for the full history of how it got here.
+
+**Two independent backend loops** (`app/scheduler.py`), not one:
+- **Discovery loop** (`run_all_agents` → `run_editorial_cycle`): fetches all
+  sources, batch-scores every new candidate in ONE Gemini call (not one call
+  per candidate — free-tier quotas as low as 5 req/min made per-candidate
+  calls architecturally broken), and **queues** anything that clears the
+  gate. It never publishes directly.
+- **Publisher loop** (`publish_due_posts`, ~5s tick, independent of the slow
+  discovery loop): releases at most one queued post — highest `overall_score`
+  first — once `Agent.next_publish_at` has elapsed, then reschedules itself
+  `random(10, 15)` minutes out (`.env`: `PUBLISH_MIN_MINUTES`/`MAX_MINUTES`).
+
+**Persona is real, not a one-line tone description.** `app/services/persona.py`
+generates a persistent `throughline` + `biases` + `signature_move` once per
+agent (`Agent.persona_profile`, LLM-generated if a key exists, template
+fallback otherwise), and `compose_post()` makes an actual LLM call instructed
+to take a stance using that identity — it does not template-summarize the
+article anymore (that only happens as a last-resort fallback with no key).
+
+**Timestamps are timezone-safe.** `app/models.py` has a `UTCDateTime`
+TypeDecorator wrapping every datetime column. Without it, SQLite silently
+drops tzinfo on read, FastAPI serializes an offset-less ISO string, and
+browsers parse that as *local* time per the JS Date spec — silently
+shifting every timestamp by the viewer's UTC offset. Don't remove this type
+or add a new `DateTime(timezone=True)` column without it.
+
+**Gemini calls go through `app/services/llm.py`**, not raw `httpx` calls
+scattered in `editorial.py`/`persona.py`. It tracks a per-model 429 backoff
+(parses Google's own "retry in Ns" hint) so a rate-limited model isn't
+hammered again until the window clears. `gemini_model` (opinion-writing) and
+`gemini_scoring_model` (bulk scoring) are separate `.env` settings on
+purpose — pick different models/tiers for each if one's quota is tighter.
+
+**Not yet built (explicitly deferred, not forgotten):** RAG/embeddings-based
+memory. Current dedup (`memory.py`) is still literal word-overlap on topic
+keys, not semantic similarity. This was item 5 of the Session 5 roadmap and
+is the next planned piece of work.
+
+---
+
 ## Executive Summary
 
 NOVA is an **LLM-assisted autonomous news curator** that:
@@ -400,6 +446,17 @@ from app.services.persona import compose_post
 from app.services.state import get_scan_state
 
 logger = logging.getLogger(__name__)
+
+> **⚠️ Note (2026-08-08):** The `editorial.py` snapshot below predates several
+> fixes and is kept for historical reference only — do not copy code from it.
+> Current real behavior: `evaluate_candidate_llm()` reads `gemini_api_key` and
+> `gemini_model` from `Settings` (backed by `backend/.env`), not raw
+> `os.environ`; it calls `gemini-2.5-flash` (not the retired
+> `gemini-1.5-flash`) via the `x-goog-api-key` header (not `?key=` query
+> param); and `run_editorial_cycle()` commits per-candidate with de-duped
+> URLs (see Session 4 & 5 in `Prompts.md`) rather than one batched commit at
+> the end. See `app/services/editorial.py` itself for the current source of
+> truth.
 
 def backup_score(title: str, summary: str, domain: str, recent_topics: list[str]) -> dict:
     """

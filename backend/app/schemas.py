@@ -33,6 +33,9 @@ class AgentSummary(BaseModel):
     name: str
     domain: str
     createdAt: datetime
+    personaThroughline: str | None = None
+    personaBiases: list[str] = []
+    personaSignatureMove: str | None = None
 
 
 class TelemetryDecision(BaseModel):
@@ -53,8 +56,19 @@ class TelemetryDecision(BaseModel):
     overall_credibility_index: float | None = None
 
 
+class QueuedPost(BaseModel):
+    id: str
+    text: str
+    sources: list[str]
+    overallScore: float
+    queuedAt: datetime
+
+
 class TelemetryResponse(BaseModel):
     active_source_url: str | None = None
     scan_status: str = "idle"
     chunks_processed: int = 0
     decisions: list[TelemetryDecision]
+    queue: list[QueuedPost] = []
+    queue_size: int = 0
+    next_publish_at: datetime | None = None

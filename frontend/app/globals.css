@@ -218,3 +218,18 @@
   color: var(--crimson);
   border-color: var(--crimson);
 }
+
+/* Pending publish queue preview */
+.pending-queue {
+  background: #101a13;
+  border: 1px solid #1f3a26;
+  border-left: 4px solid var(--lime);
+  padding: 16px 20px;
+  margin: 0 0 15px;
+}
+.pending-queue-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}

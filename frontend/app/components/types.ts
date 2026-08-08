@@ -41,9 +41,20 @@ export type TelemetryDecision = {
   overall_credibility_index?: number;
 };
 
+export type QueuedPost = {
+  id: string;
+  text: string;
+  sources: string[];
+  overallScore: number;
+  queuedAt: string;
+};
+
 export type TelemetryResponse = {
   active_source_url: string | null;
   scan_status: string;
   chunks_processed: number;
   decisions: TelemetryDecision[];
+  queue: QueuedPost[];
+  queue_size: number;
+  next_publish_at: string | null;
 };

@@ -22,7 +22,12 @@ _COLUMN_MIGRATIONS = [
     ("topic_decisions", "novelty_score", "FLOAT"),
     ("topic_decisions", "overall_credibility_index", "FLOAT"),
     ("agents", "post_count", "INTEGER DEFAULT 0"),
+    ("agents", "persona_profile", "TEXT DEFAULT ''"),
+    ("agents", "next_publish_at", "DATETIME"),
     ("posts", "sequence_number", "INTEGER DEFAULT 0"),
+    ("posts", "status", "VARCHAR(16) DEFAULT 'queued'"),
+    ("posts", "published_at", "DATETIME"),
+    ("posts", "overall_score", "FLOAT DEFAULT 0.0"),
 ]
 
 
@@ -51,6 +56,29 @@ def _backfill_sequence_numbers() -> None:
         db.close()
 
 
+def _backfill_queue_status() -> None:
+    """Posts created before the publish-queue feature existed have no
+    `status`/`published_at` -- without this, the new "only show status ==
+    'published'" filter in get_feed would make every existing post vanish
+    from the UI. Anything that already has a sequence_number was clearly
+    already live, so mark it published (using created_at as its publish
+    time, since that's the closest we have)."""
+    db = SessionLocal()
+    try:
+        legacy_posts = (
+            db.query(Post)
+            .filter(Post.sequence_number > 0, Post.status == "queued")
+            .all()
+        )
+        for post in legacy_posts:
+            post.status = "published"
+            if post.published_at is None:
+                post.published_at = post.created_at
+        db.commit()
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -65,6 +93,7 @@ async def lifespan(_: FastAPI):
                 pass
 
     _backfill_sequence_numbers()
+    _backfill_queue_status()
 
     start_scheduler()
     yield
