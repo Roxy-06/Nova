@@ -53,3 +53,10 @@ class TopicDecision(Base):
     reason: Mapped[str] = mapped_column(Text)
     score: Mapped[str] = mapped_column(String(16))
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    # Reasoning matrices fields
+    credibility_score: Mapped[float | None] = mapped_column(nullable=True)
+    domain_relevance: Mapped[float | None] = mapped_column(nullable=True)
+    technical_depth: Mapped[float | None] = mapped_column(nullable=True)
+    novelty_score: Mapped[float | None] = mapped_column(nullable=True)
+    overall_credibility_index: Mapped[float | None] = mapped_column(nullable=True)

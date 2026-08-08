@@ -13,9 +13,11 @@ from app.schemas import (
     InitRequest,
     InitResponse,
     TelemetryDecision,
+    TelemetryResponse,
 )
 from app.services.editorial import run_editorial_cycle
 from app.services.persona import build_voice_profile
+from app.services.state import get_scan_state
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
@@ -51,16 +53,26 @@ def get_feed(agentId: str, db: Session = Depends(get_db)) -> FeedResponse:
     return FeedResponse(posts=feed_posts)
 
 
-@router.get("/telemetry", response_model=list[TelemetryDecision])
-def get_telemetry(agentId: str, db: Session = Depends(get_db)):
+@router.get("/telemetry", response_model=TelemetryResponse)
+def get_telemetry(agentId: str, db: Session = Depends(get_db)) -> TelemetryResponse:
     if not db.get(Agent, agentId):
         raise HTTPException(status_code=404, detail="Unknown agentId")
-    return db.scalars(
+    
+    decisions = db.scalars(
         select(TopicDecision)
         .where(TopicDecision.agent_id == agentId)
         .order_by(TopicDecision.decided_at.desc())
         .limit(30)
     ).all()
+    
+    state = get_scan_state(agentId)
+    
+    return TelemetryResponse(
+        active_source_url=state.active_source_url,
+        scan_status=state.scan_status,
+        chunks_processed=state.chunks_processed,
+        decisions=list(decisions)
+    )
 
 
 @router.get("/{agent_id}", response_model=AgentSummary)

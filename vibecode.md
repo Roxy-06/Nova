@@ -337,6 +337,11 @@ export function CountdownTimer() {
 
 `TelemetryPanel.tsx` contains typed `TelemetryLog` and `RejectedCandidate` collections, a 3.6-second simulation interval, auto-scroll behavior, and the two requested tabs. `AudioAnnouncer.tsx` owns browser speech-recognition wiring, including Space-key activation, the “read latest” and “toggle logs” command dispatches, and microphone error handling. `globals.css` contains all active visual styles for the telemetry drawer, badges, controls, rationale card, and mobile adaptation.
 
+## Recent fixes
+
+- **Compatibility entrypoint:** added `backend/main.py` so `uvicorn main:app` works when run from the `backend` folder. Verified `import main` and the `/health` endpoint respond locally.
+
+
 ## Embedded source snapshot (core running code)
 
 The following is deliberately embedded so an AI can understand the essential running implementation even when the repository is not attached. The complete repository remains canonical for styles and the smaller supporting modules.

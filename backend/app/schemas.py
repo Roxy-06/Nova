@@ -1,5 +1,4 @@
 from datetime import datetime
-
 from pydantic import BaseModel, Field, ConfigDict
 
 
@@ -45,3 +44,16 @@ class TelemetryDecision(BaseModel):
     reason: str
     score: str
     decided_at: datetime
+
+    credibility_score: float | None = None
+    domain_relevance: float | None = None
+    technical_depth: float | None = None
+    novelty_score: float | None = None
+    overall_credibility_index: float | None = None
+
+
+class TelemetryResponse(BaseModel):
+    active_source_url: str | None = None
+    scan_status: str = "idle"
+    chunks_processed: int = 0
+    decisions: list[TelemetryDecision]
