@@ -19,7 +19,7 @@ NOVA is an **LLM-assisted autonomous news curator** that:
 5. **Publishes** to SQLite with full reasoning and source attribution
 6. **Remembers** every decision in an audit table for transparency
 
-**No prompting after initialization.** Runs autonomously every 6 hours via APScheduler.
+**No prompting after initialization.** As of 2026-08-08, runs continuously and non-stop via a plain `asyncio` loop — no fixed interval. As soon as one full pass across every agent finishes, the next starts immediately, with only a short (default 10s) courtesy cooldown between passes. It never enters a real standby state; it only stops when the backend process is stopped.
 
 ---
 
@@ -33,7 +33,8 @@ NOVA is an **LLM-assisted autonomous news curator** that:
 | Deduplication | Real | Word overlap detection + source tracking in DB |
 | Discovery | Real | Live RSS, web scraping, API fetching |
 | Telemetry display | Real | Frontend shows actual TelemetryDecision records from SQLite |
-| Auto-scheduling | Real | APScheduler runs 6-hourly cycles |
+| Auto-scheduling | Real | Plain `asyncio` loop runs cycles back-to-back, forever (no fixed interval, no standby) |
+| Post numbering | Real | `Agent.post_count` + `Post.sequence_number` persisted in SQL; survives backend restarts |
 | Database audit trail | Real | Every decision persisted to topic_decisions table |
 | Voice announcer | Real | Browser speechSynthesis API on new posts |
 
@@ -73,7 +74,6 @@ Backend:
   uvicorn[standard]==0.34.0       # ASGI server
   sqlalchemy==2.0.36              # ORM
   pydantic-settings==2.7.0        # Config management
-  apscheduler==3.10.4             # Task scheduling
   httpx==0.28.1                   # Async HTTP (discovery)
   feedparser==6.0.11              # RSS parsing
 
@@ -152,6 +152,33 @@ def health() -> dict[str, str]:
 
 ---
 
+### Database Engine: `app/db.py` (updated 2026-08-08 — concurrency hardening)
+
+Now that the editorial loop runs continuously instead of once every 6 hours,
+SQLite write contention with normal API requests became a real issue (see
+Session 4 in `Prompts.md` — `database is locked` on `POST /api/agent/init`
+while a cycle was mid-write). Fixed via:
+
+```python
+connect_args = {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
+engine = create_engine(settings.database_url, connect_args=connect_args)
+
+if is_sqlite:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+```
+
+`journal_mode=WAL` lets reads (feed/telemetry polling) proceed without
+blocking on the scanner's writes; `busy_timeout=30000` (backed up by the
+matching `connect_args` timeout) means a genuinely overlapping write waits up
+to 30s instead of erroring immediately like SQLite's 5s default did.
+
+---
+
 ### Data Model: `app/models.py`
 
 ```python
@@ -176,6 +203,9 @@ class Agent(Base):
     voice_profile: Mapped[str] = mapped_column(Text)  # Persona description
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Added 2026-08-08. Running counter, persisted in SQL, never resets.
+    # Next post gets sequence_number = post_count + 1, even after a restart.
+    post_count: Mapped[int] = mapped_column(default=0)
     posts: Mapped[list["Post"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
 
 class Post(Base):
@@ -184,6 +214,10 @@ class Post(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    # Added 2026-08-08. Assigned once at creation from Agent.post_count.
+    # Existing pre-upgrade posts are backfilled on startup (see main.py
+    # _backfill_sequence_numbers) so numbering never resets on upgrade.
+    sequence_number: Mapped[int] = mapped_column(default=0, index=True)
     text: Mapped[str] = mapped_column(Text)  # Final composed post
     rationale: Mapped[str] = mapped_column(Text)  # Why this was selected
     sources: Mapped[list[str]] = mapped_column(JSON)  # URL list
@@ -718,53 +752,100 @@ def source_seen(db: Session, agent_id: str, url: str) -> bool:
 
 ---
 
-### Scheduling: `app/scheduler.py`
+### Scheduling: `app/scheduler.py` (rewritten 2026-08-08 — continuous, no fixed interval)
+
+`apscheduler` was removed entirely. The agent now scans **non-stop**: as soon as
+one full pass over every agent finishes, the next pass starts immediately. The
+only pause is a short, interruptible courtesy cooldown between passes
+(`Settings.cycle_cooldown_seconds`, default 10s) so RSS/HN endpoints aren't
+hammered in a tight loop — this is not a standby state. The loop only stops
+when `stop_scheduler()` runs during FastAPI shutdown (i.e. the backend process
+is stopped).
 
 ```python
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import asyncio
+import logging
 
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Agent
 from app.services.editorial import run_editorial_cycle
 
-scheduler = AsyncIOScheduler(timezone="UTC")
+logger = logging.getLogger(__name__)
+
+_loop_task: "asyncio.Task | None" = None
+_stop_event: "asyncio.Event | None" = None
+
 
 async def run_all_agents() -> None:
-    """Run editorial cycle for all initialized agents."""
     db = SessionLocal()
     try:
         agent_ids = [agent.id for agent in db.query(Agent.id).all()]
     finally:
         db.close()
-    
     for agent_id in agent_ids:
         db = SessionLocal()
         try:
-            await run_editorial_cycle(db, agent_id)
+            published = await run_editorial_cycle(db, agent_id)
+            if published:
+                logger.info("Agent %s published %s post(s) this cycle", agent_id, published)
+        except Exception:
+            logger.exception("Editorial cycle failed for agent %s", agent_id)
         finally:
             db.close()
 
+
+async def _continuous_loop() -> None:
+    settings = get_settings()
+    assert _stop_event is not None
+    while not _stop_event.is_set():
+        await run_all_agents()
+        if _stop_event.is_set():
+            break
+        try:
+            await asyncio.wait_for(_stop_event.wait(), timeout=settings.cycle_cooldown_seconds)
+        except asyncio.TimeoutError:
+            pass
+
+
 def start_scheduler() -> None:
-    """Start the 6-hour recurring cycle."""
-    if scheduler.running:
+    global _loop_task, _stop_event
+    if _loop_task is not None and not _loop_task.done():
         return
-    scheduler.add_job(
-        run_all_agents,
-        "interval",
-        hours=get_settings().posting_interval_hours,
-        id="editorial-cycle",
-        replace_existing=True
-    )
-    scheduler.start()
+    _stop_event = asyncio.Event()
+    _loop_task = asyncio.create_task(_continuous_loop())
+
 
 def stop_scheduler() -> None:
-    """Gracefully shutdown scheduler."""
-    if scheduler.running:
-        scheduler.shutdown(wait=False)
+    global _loop_task, _stop_event
+    if _stop_event is not None:
+        _stop_event.set()
+    if _loop_task is not None:
+        _loop_task.cancel()
 ```
 
+**Also changed in the same pass (2026-08-08):** `run_editorial_cycle()` in
+`editorial.py` used to publish only the single highest-scoring accepted
+candidate per cycle and discard every other qualifying article. It now
+publishes **every** accepted, non-duplicate candidate found in a pass, each
+getting its own persisted `sequence_number` (see below).
+
+**Revised again same day (Session 4, bugfix):** the first version of this
+change used `db.flush()` after each publish and one `db.commit()` at the end
+of the whole cycle. That held a single write transaction open across every
+slow LLM call in the loop, which caused real `database is locked` errors
+against concurrent API requests once the loop started running continuously.
+It's now: candidates are de-duplicated by URL immediately after discovery
+(overlapping sources like the HN scrape + HN Algolia API can return the same
+URL in one pass), and **each candidate commits immediately** — `TopicDecision`
++ optional `Post` together — with a `try/except IntegrityError` fallback that
+rolls back and skips just that one candidate if a duplicate URL ever slips
+through, instead of losing the whole cycle's work. This also means
+`recently_covered()`/`source_seen()` see each candidate's outcome for the
+rest of the same cycle without any extra flush bookkeeping.
+
 **Key point:** Runs all initialized agents in sequence. One failed cycle doesn't block others.
+
 
 ---
 

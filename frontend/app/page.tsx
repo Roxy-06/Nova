@@ -215,7 +215,7 @@ export default function Home() {
               <div className="feed">
                 {posts.map((post, index) => (
                   <article className="post" key={post.id}>
-                    <div className="post-index">0{posts.length - index}</div>
+                    <div className="post-index">{String(post.sequenceNumber).padStart(2, "0")}</div>
                     <div>
                       <time>
                         {new Date(post.createdAt).toLocaleString(undefined, {

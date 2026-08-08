@@ -49,7 +49,17 @@ def get_feed(agentId: str, db: Session = Depends(get_db)) -> FeedResponse:
     if not db.get(Agent, agentId):
         raise HTTPException(status_code=404, detail="Unknown agentId")
     posts = db.scalars(select(Post).where(Post.agent_id == agentId).order_by(Post.created_at.desc())).all()
-    feed_posts = [FeedPost(id=post.id, createdAt=post.created_at, text=post.text, rationale=post.rationale, sources=post.sources) for post in posts]
+    feed_posts = [
+        FeedPost(
+            id=post.id,
+            sequenceNumber=post.sequence_number,
+            createdAt=post.created_at,
+            text=post.text,
+            rationale=post.rationale,
+            sources=post.sources,
+        )
+        for post in posts
+    ]
     return FeedResponse(posts=feed_posts)
 
 

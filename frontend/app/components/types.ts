@@ -1,5 +1,6 @@
 export type FeedPost = {
   id: string;
+  sequenceNumber: number;
   createdAt: string;
   text: string;
   rationale: string;

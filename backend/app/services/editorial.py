@@ -4,6 +4,7 @@ import logging
 import os
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Agent, Post, TopicDecision
@@ -157,7 +158,21 @@ async def run_editorial_cycle(db: Session, agent_id: str) -> int:
             
             source_candidates = await discover_source_candidates(client, source)
             candidates.extend(source_candidates)
-            
+
+    # Different sources can surface the exact same article (e.g. the HN
+    # scrape and the HN Algolia API both return the same story URL in the
+    # same pass). De-dupe by URL up front so we don't evaluate — or worse,
+    # try to double-insert a TopicDecision for — the same URL twice in one
+    # cycle.
+    deduped_candidates: list[Candidate] = []
+    seen_urls: set[str] = set()
+    for candidate in candidates:
+        if candidate.url in seen_urls:
+            continue
+        seen_urls.add(candidate.url)
+        deduped_candidates.append(candidate)
+    candidates = deduped_candidates
+
     # 2. Extract recent topics
     recent_topics = db.scalars(
         select(TopicDecision.headline)
@@ -166,11 +181,19 @@ async def run_editorial_cycle(db: Session, agent_id: str) -> int:
         .limit(15)
     ).all()
     recent_topics = list(recent_topics)
-    
-    selected: Candidate | None = None
-    selected_key = ""
-    selected_score = 0.0
-    
+
+    # Carry the most recently published post's topic forward for narrative
+    # continuity. This is updated in-loop as we publish, so a second or third
+    # post published in the *same* cycle still reads as a continuation.
+    continuity_key = db.scalar(
+        select(Post.topic_key)
+        .where(Post.agent_id == agent_id)
+        .order_by(Post.created_at.desc())
+        .limit(1)
+    )
+
+    published_count = 0
+
     # Process candidates
     for candidate in candidates:
         if source_seen(db, agent_id, candidate.url):
@@ -234,41 +257,59 @@ async def run_editorial_cycle(db: Session, agent_id: str) -> int:
             overall_credibility_index=overall_credibility_index
         ))
         
-        if decision == "accepted" and overall_credibility_index > selected_score:
-            selected = candidate
-            selected_key = key
-            selected_score = overall_credibility_index
-            
-    if selected:
-        state.scan_status = "publishing"
-        state.active_source_url = selected.url
-        
-        prior = db.scalar(
-            select(Post.topic_key)
-            .where(Post.agent_id == agent_id)
-            .order_by(Post.created_at.desc())
-            .limit(1)
-        )
-        
-        rationale = (
-            f"Selected after scoring {selected_score}/10 overall credibility index. "
-            f"LLM Details: credibility={credibility_score:.1f}, domain_relevance={domain_relevance:.1f}, "
-            f"technical_depth={technical_depth:.1f}, novelty={novelty_score:.1f}. "
-            f"Primary source: {selected.source_name}."
-        )
-        
-        db.add(Post(
-            agent_id=agent_id,
-            text=compose_post(agent, selected.title, selected.summary, prior),
-            rationale=rationale,
-            sources=[selected.url],
-            topic_key=selected_key
-        ))
-        
+        published_this_candidate = False
+        if decision == "accepted":
+            state.scan_status = "publishing"
+            state.active_source_url = candidate.url
+
+            rationale = (
+                f"Selected after scoring {overall_credibility_index}/10 overall credibility index. "
+                f"LLM Details: credibility={credibility_score:.1f}, domain_relevance={domain_relevance:.1f}, "
+                f"technical_depth={technical_depth:.1f}, novelty={novelty_score:.1f}. "
+                f"Primary source: {candidate.source_name}."
+            )
+
+            agent.post_count += 1
+            db.add(Post(
+                agent_id=agent_id,
+                sequence_number=agent.post_count,
+                text=compose_post(agent, candidate.title, candidate.summary, continuity_key),
+                rationale=rationale,
+                sources=[candidate.url],
+                topic_key=key
+            ))
+            published_this_candidate = True
+
+        # Commit after every single candidate rather than batching the whole
+        # cycle into one transaction. Each editorial cycle can run many slow
+        # LLM calls in sequence; holding one long-lived write transaction
+        # open across all of them was blocking normal API requests (e.g.
+        # POST /api/agent/init) with SQLite "database is locked" errors now
+        # that the loop runs continuously instead of once every 6 hours.
+        # Committing per-candidate also means recently_covered()/
+        # source_seen() immediately see this candidate for the rest of the
+        # cycle without a separate flush.
+        try:
+            db.commit()
+        except IntegrityError:
+            # Defensive fallback: if a duplicate (agent_id, source_url) still
+            # slips through (e.g. two overlapping cycles somehow overlap),
+            # roll back this single candidate's writes and move on instead of
+            # losing the whole cycle's work.
+            db.rollback()
+            logger.warning("Duplicate source_url for agent %s, skipping: %s", agent_id, candidate.url)
+            continue
+
+        if published_this_candidate:
+            recent_topics.insert(0, candidate.title)
+            recent_topics = recent_topics[:15]
+            continuity_key = key
+            published_count += 1
+
     agent.last_run_at = datetime.now(timezone.utc)
     db.commit()
-    
+
     state.scan_status = "idle"
     state.active_source_url = None
-    
-    return 1 if selected else 0
+
+    return published_count

@@ -1,5 +1,30 @@
 "use client";
 import { useEffect, useState } from "react";
-const LOOP_MS = 6 * 60 * 60 * 1000;
-function untilNextLoop() { const left = LOOP_MS - Date.now() % LOOP_MS; return `${String(Math.floor(left / 3_600_000)).padStart(2, "0")}h ${String(Math.floor(left % 3_600_000 / 60_000)).padStart(2, "0")}m ${String(Math.floor(left % 60_000 / 1000)).padStart(2, "0")}s`; }
-export function CountdownTimer() { const [remaining, setRemaining] = useState("--h --m --s"); useEffect(() => { const update = () => setRemaining(untilNextLoop()); update(); const id = setInterval(update, 1000); return () => clearInterval(id); }, []); return <span className="countdown"><i /> AUTONOMOUS ACTIVE <b>NEXT INGESTION LOOP: {remaining}</b></span>; }
+
+function formatElapsed(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = String(Math.floor(totalSeconds / 3600)).padStart(2, "0");
+  const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, "0");
+  const s = String(totalSeconds % 60).padStart(2, "0");
+  return `${h}h ${m}m ${s}s`;
+}
+
+// The backend no longer runs on a fixed interval -- it scans continuously,
+// back-to-back, with only a short courtesy pause between passes. There is no
+// "next loop" time to count down to, so this now shows session uptime as a
+// simple heartbeat that the node has never gone to standby.
+export function CountdownTimer() {
+  const [elapsed, setElapsed] = useState("00h 00m 00s");
+  useEffect(() => {
+    const start = Date.now();
+    const update = () => setElapsed(formatElapsed(Date.now() - start));
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span className="countdown">
+      <i /> CONTINUOUS SCAN LOOP // NO STANDBY <b>SESSION UPTIME: {elapsed}</b>
+    </span>
+  );
+}

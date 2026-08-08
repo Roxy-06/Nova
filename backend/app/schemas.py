@@ -17,6 +17,7 @@ class InitResponse(BaseModel):
 
 class FeedPost(BaseModel):
     id: str
+    sequenceNumber: int
     createdAt: datetime
     text: str
     rationale: str
