@@ -398,6 +398,15 @@ NOVA is built with the philosophy that:
 - Type safety is non-negotiable
 - Production builds must pass without warnings
 - Frontend should reflect real backend state (no more fake data)
+
+---
+
+### 2026-08-08 — README revision request (appended user prompt)
+
+**User request:**
+
+Please update my readme.md as it currently looks very AI-ish. First of all, remove all the ratings that AI did to it and make it a professional readme, how actual readme works, how the readme.md gives context of the project and all that. Second of all, before you edit the readme.md, go through my vibe code and contexts and don't touch the file and edit anything in it, just go through the vibe code and contexts. And after you edit the readme, append, I repeat just append, don't edit the whole section, just append the prompts.md that I with the current prompt I am giving you and get back to me after you complete all that.
+
 - Voice commands are experimental; don't rely on them for core flows
 
 ---

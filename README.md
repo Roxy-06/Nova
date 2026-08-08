@@ -1,6 +1,94 @@
-# NOVA — Autonomous AI Technology Editorial Node
+# NOVA — Autonomous Editorial Node
 
-**An LLM-assisted autonomous news curation system that discovers, evaluates, and publishes technology insights.**
+NOVA is an autonomous editorial system that discovers, evaluates, and records technology reporting. It provides a clear codebase and API surface for running a specialized editorial persona, inspecting decisions, and extending publishing or observability features.
+
+## Purpose
+
+This repository contains the code and documentation required to run a self-contained editorial pipeline: discovery (RSS, scraping, APIs), candidate evaluation, deduplication, audit logging, and a minimal frontend for inspection. The README exists to give contributors and operators the context they need to understand, run, and extend the project.
+
+## Key Features
+
+- Discover technology stories from RSS feeds, web scraping, and public APIs
+- Evaluate candidates using a semantic scoring pipeline (LLM-backed, with a fallback scorer)
+- Deduplicate and persist editorial decisions for auditing and reproducibility
+- Provide a simple API and a frontend for inspecting posts and telemetry
+
+## How to Use This README
+
+This document is organized to help three primary audiences:
+- Operators: quick local setup and run commands under "Local Development"
+- Developers: project structure and implementation notes under "Project Structure"
+- Reviewers: high-level architecture and workflow descriptions to understand trade-offs and next steps
+
+Read the sections in order for a quick start, or jump to the area you need (Development, Structure, or Contributing).
+
+## Getting Started (Local)
+
+Prerequisites:
+- Python 3.10+
+- Node.js 18+
+- SQLite (bundled with Python, no external server required for development)
+
+Backend (development):
+
+```powershell
+cd backend
+pip install -r requirements.txt
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Health check: `http://localhost:8000/health` → `{"status": "ok"}`
+
+Frontend (development):
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+App: `http://localhost:3000`
+
+Environment variables commonly used:
+
+```env
+GEMINI_API_KEY=sk-...          # Optional: provides LLM-backed scoring
+DATABASE_URL=sqlite:///./signalcraft.db
+CORS_ORIGINS=http://localhost:3000
+POSTING_INTERVAL_HOURS=6
+```
+
+## Project Structure (high level)
+
+- `backend/` — FastAPI application, SQLAlchemy models, services (discovery, editorial, memory), and scheduling
+- `frontend/` — Next.js-based inspector UI showing feed, telemetry, and audit views
+- `Prompts.md` — Living record of prompts, experiments, and architectural decisions
+- `vibecode&context.md` — Implementation handoff and architecture deep-dive (read-only reference)
+
+See the source directories for file-level documentation and docstrings that explain the behavior of core modules.
+
+## Architecture Summary
+
+1. Discovery: asynchronous fetchers collect candidate items from configured sources
+2. Evaluation: a scoring pipeline assigns semantic scores (credibility, relevance, depth, novelty); falls back to a deterministic scorer if LLM access is unavailable
+3. Deduplication and Memory: recent coverage and source tracking prevent repeated publication
+4. Publish: accepted candidates are persisted as `Post` records with rationale and sources
+5. Frontend: read-only inspector that visualizes posts, telemetry, and rejected candidates for audit
+
+## Contributing
+
+- Use feature branches and open a pull request for changes
+- Add or update tests for editorial logic when modifying scoring or gating rules
+- Keep `Prompts.md` and `vibecode&context.md` updated when changing architectural decisions
+
+## Where This README Helps
+
+This README provides the minimal operational and architectural context to get started, troubleshoot, and contribute. For more detailed design notes and a living history of design decisions, consult `vibecode&context.md` and `Prompts.md`.
+
+## License
+
+See `LICENSE` (if present) or consult the project owner for licensing and distribution policies.
+
 
 ## Quick Overview
 
