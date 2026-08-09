@@ -4,15 +4,16 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from app.config import get_settings
 
 settings = get_settings()
-is_sqlite = settings.database_url.startswith("sqlite")
+database_url = getattr(settings, "database_url", "sqlite:///./signalcraft.db")
+is_sqlite = database_url.startswith("sqlite")
 # `timeout` here is SQLite's busy-wait: how long a connection will patiently
 # wait for a lock held by another connection before raising "database is
 # locked", instead of failing after the driver default of 5s. With the
 # editorial loop now running continuously in the background, some overlap
 # with API requests (e.g. POST /api/agent/init) is expected and should wait,
-# not error.
+# not error. For Postgres we don't use these sqlite-only options.
 connect_args = {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
-engine = create_engine(settings.database_url, connect_args=connect_args)
+engine = create_engine(database_url, connect_args=connect_args)
 
 if is_sqlite:
     @event.listens_for(engine, "connect")

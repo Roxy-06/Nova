@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 _backoff_until: dict[str, datetime] = {}
 
 _RETRY_SECONDS_RE = re.compile(r"retry in ([\d.]+)s", re.IGNORECASE)
+from collections import deque
+
+# Per-model recent call timestamps (epoch seconds) to enforce a local
+# rate limit and avoid hitting provider quotas repeatedly.
+_recent_calls: dict[str, deque] = {}
 
 
 class GeminiUnavailable(Exception):
@@ -31,6 +36,24 @@ def _seconds_until_backoff_clears(model: str) -> float:
     return max(0.0, remaining)
 
 
+def _allow_gemini_call(model: str) -> tuple[bool, str]:
+    """Return (allowed, reason). Enforces a simple sliding-window
+    per-model limit using `gemini_max_requests_per_minute` from settings."""
+    settings = get_settings()
+    limit = settings.gemini_max_requests_per_minute
+    now = datetime.now(timezone.utc).timestamp()
+    dq = _recent_calls.get(model)
+    if dq is None:
+        dq = deque()
+        _recent_calls[model] = dq
+    # purge entries older than 60s
+    while dq and now - dq[0] > 60:
+        dq.popleft()
+    if len(dq) >= limit:
+        return False, f"local rate limit: {len(dq)}/{limit} in last 60s"
+    return True, ""
+
+
 async def call_gemini(model: str, prompt: str, response_schema: dict | None = None) -> str:
     """Make one Gemini generateContent call and return the raw text of the
     response. Raises GeminiUnavailable if it can't/shouldn't be called right
@@ -43,6 +66,10 @@ async def call_gemini(model: str, prompt: str, response_schema: dict | None = No
     remaining = _seconds_until_backoff_clears(model)
     if remaining > 0:
         raise GeminiUnavailable(f"{model} is in rate-limit backoff for another {remaining:.0f}s")
+
+    allowed, reason = _allow_gemini_call(model)
+    if not allowed:
+        raise GeminiUnavailable(f"{model} cannot be called now ({reason})")
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
@@ -60,6 +87,12 @@ async def call_gemini(model: str, prompt: str, response_schema: dict | None = No
             res = await client.post(url, headers=headers, json=payload)
             res.raise_for_status()
             res_json = res.json()
+            # record successful call timestamp for local rate-limiting
+            dq = _recent_calls.get(model)
+            if dq is None:
+                dq = deque()
+                _recent_calls[model] = dq
+            dq.append(datetime.now(timezone.utc).timestamp())
             return res_json["candidates"][0]["content"]["parts"][0]["text"]
     except httpx.HTTPStatusError as e:
         body = e.response.text[:800] if e.response is not None else "<no response body>"

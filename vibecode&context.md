@@ -1365,3 +1365,168 @@ def set_webhook_url(agent_id: str, url: str, db: Session):
 **Last Updated:** August 8, 2026
 
 **Status:** 8.0/10 — Ready for distribution & feedback improvements
+
+## Telemetry Window (updated 2026-08-08 — replaced hard cap with aging window)
+
+`GET /api/agent/telemetry` no longer does `.limit(30)`. `Settings.telemetry_window_minutes`
+(default 6.0, configurable via `.env`) now bounds the response by time instead
+of row count:
+
+```python
+cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.telemetry_window_minutes)
+decisions = db.scalars(
+    select(TopicDecision)
+    .where(TopicDecision.agent_id == agentId, TopicDecision.decided_at >= cutoff)
+    .order_by(TopicDecision.decided_at.desc())
+).all()
+```
+
+This only affects what this endpoint *returns*. `TopicDecision` rows are
+never deleted, so `source_seen()`/`recently_covered()` (permanent dedup) see
+the complete history regardless of this window. `TelemetryResponse` echoes
+`telemetry_window_minutes` back so the frontend label is never a second,
+independently-hardcoded guess.
+
+---
+
+## Publish Queue: Manual Publish Now (added 2026-08-08)
+
+Alongside the automatic timer-driven `publish_due_posts()` (Session 7), there
+is now a manual path for a person to force one specific queued post live
+immediately from the UI. Both paths share the exact same release logic via a
+new private helper:
+
+```python
+def _do_publish(db: Session, agent: Agent, post: Post, now: datetime) -> None:
+    """Shared release logic used by both the automatic timer-driven publish
+    and the manual "Publish now" action, so both paths number posts and
+    reset the timer identically -- a manual publish is not a special case,
+    it's just a normal publish that happened to be triggered by a click
+    instead of a timer."""
+    settings = get_settings()
+    agent.post_count += 1
+    post.status = "published"
+    post.published_at = now
+    post.sequence_number = agent.post_count
+    agent.next_publish_at = now + timedelta(
+        minutes=random.uniform(settings.publish_min_minutes, settings.publish_max_minutes)
+    )
+
+
+def publish_specific_post(db: Session, agent_id: str, post_id: str) -> bool:
+    """Manually publish one specific queued post right now, out of score
+    order, in response to a person clicking "Publish now" in the queue UI."""
+    agent = db.get(Agent, agent_id)
+    if not agent:
+        return False
+    post = db.get(Post, post_id)
+    if not post or post.agent_id != agent_id or post.status != "queued":
+        return False
+    _do_publish(db, agent, post, datetime.now(timezone.utc))
+    db.commit()
+    return True
+```
+
+Exposed via `POST /api/agent/queue/{post_id}/publish-now?agentId=...`.
+
+**Why this endpoint is `async def` and not `def` (deliberate, not a style
+choice):** FastAPI runs `def` endpoints in a worker threadpool. The
+background `_publisher_loop` (Session 7) ticks every 5s on the asyncio event
+loop and also calls into `publish_due_posts`, touching the same `Post` rows.
+If the manual endpoint were `def`, it could run in a threadpool thread
+genuinely concurrently with that event-loop tick — both could read
+`status == "queued"` as still true before either had committed, and both
+publish the same post (double sequence number issued). Declaring the
+endpoint `async def` with no `await` in the critical section means it
+executes on the single asyncio event loop instead, so it's cooperatively
+scheduled against `_publisher_loop` rather than truly parallel to it — no
+other coroutine gets a chance to run until this one returns, so the
+check-then-act on `post.status` is effectively atomic.
+
+---
+
+## Per-Post Score Breakdown (added 2026-08-08 — replaced hardcoded feed placeholders)
+
+`Post` gained four nullable columns, populated at queue time from the same
+assessment that scored the candidate (`credibility_score`, `domain_relevance`,
+`technical_depth`, `novelty_score`), alongside the existing `overall_score`.
+These are now exposed on both `FeedPost` and `QueuedPost` schemas.
+
+This directly replaces two formulas that were previously hardcoded in
+`page.tsx` and had no relationship to the actual post being rendered:
+
+```tsx
+// REMOVED -- was index-based, not data-based:
+<span>DEDUPLICATION: {99 - index}.{4 - index}% UNIQUE</span>
+...
+<span>DOMAIN MATCH: {94 - index * 2}%</span>
+```
+
+Replaced with the real per-post scores, rendering "N/A" for posts published
+before these columns existed rather than inventing a number:
+
+```tsx
+<span>NOVELTY: {post.noveltyScore != null ? `${post.noveltyScore.toFixed(1)}/10` : "N/A"}</span>
+<span>CREDIBILITY: {post.credibilityScore != null ? `${post.credibilityScore.toFixed(1)}/10` : "N/A"}</span>
+...
+<span>DOMAIN MATCH: {post.domainRelevance != null ? `${(post.domainRelevance * 10).toFixed(0)}%` : "N/A"}</span>
+```
+
+---
+
+## CountdownTimer.tsx (rewritten 2026-08-08 — bugfix: props existed in caller but not in component)
+
+Found while wiring up the queue UI: `page.tsx` was already calling
+`<CountdownTimer nextPublishAt={...} queueSize={...} />`, but the component
+itself (unchanged since the Session 3 "continuous loop" rewrite) still took
+zero props and only rendered session uptime -- the props were being silently
+dropped by React and the countdown the UI appeared to show didn't actually
+exist. Rewritten to accept both props and render a live countdown sourced
+entirely from backend state (`Agent.next_publish_at`), with no client-side
+timer math beyond formatting `Date.now()` against that timestamp every
+second:
+
+```tsx
+type Props = {
+  nextPublishAt: string | null;
+  queueSize: number;
+};
+
+export function CountdownTimer({ nextPublishAt, queueSize }: Props) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  let statusLabel: string;
+  if (queueSize === 0) {
+    statusLabel = "QUEUE EMPTY — SCANNING FOR CANDIDATES";
+  } else if (!nextPublishAt) {
+    statusLabel = "READY TO PUBLISH";
+  } else {
+    const remainingMs = new Date(nextPublishAt).getTime() - now;
+    statusLabel = remainingMs <= 0
+      ? "PUBLISHING NOW…"
+      : `NEXT AUTO-PUBLISH IN ${formatRemaining(remainingMs)}`;
+  }
+  ...
+}
+```
+
+Because this reads `next_publish_at` straight from the backend on every 4s
+telemetry poll, a manual "Publish now" click (which resets that field via
+`_do_publish`) is reflected in the countdown on the very next poll with no
+special-case wiring needed.
+
+---
+
+## QueueView.tsx (new, 2026-08-08)
+
+Dedicated, scrollable section for browsing the *entire* publish queue --
+distinct from the small `PendingQueue.tsx` teaser (which only ever showed
+"1 + N more"). Renders every queued `Post` with its real score breakdown and
+a Publish Now button that calls the new endpoint above, then triggers a full
+`refresh()` so the feed, queue, and countdown all update together. Reachable
+via a new third tab in `page.tsx`'s view toggle: PUBLIC FEED / PUBLISH QUEUE
+(N) / OPERATOR ROOM.

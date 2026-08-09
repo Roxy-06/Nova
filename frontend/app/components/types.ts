@@ -5,6 +5,15 @@ export type FeedPost = {
   text: string;
   rationale: string;
   sources: string[];
+  // Real scores carried over from editorial scoring at queue time -- these
+  // replace the old hardcoded (94 - index * 2)% placeholder formula.
+  // Optional because posts published before these columns existed won't
+  // have them.
+  overallScore?: number | null;
+  credibilityScore?: number | null;
+  domainRelevance?: number | null;
+  technicalDepth?: number | null;
+  noveltyScore?: number | null;
 };
 
 export type TelemetryLog = {
@@ -44,8 +53,13 @@ export type TelemetryDecision = {
 export type QueuedPost = {
   id: string;
   text: string;
+  rationale: string;
   sources: string[];
   overallScore: number;
+  credibilityScore?: number | null;
+  domainRelevance?: number | null;
+  technicalDepth?: number | null;
+  noveltyScore?: number | null;
   queuedAt: string;
 };
 
@@ -57,4 +71,7 @@ export type TelemetryResponse = {
   queue: QueuedPost[];
   queue_size: number;
   next_publish_at: string | null;
+  // Echoed from the backend so the UI can label the log window accurately
+  // (e.g. "last 6 min") without hardcoding that number a second time here.
+  telemetry_window_minutes: number;
 };

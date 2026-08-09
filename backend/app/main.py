@@ -12,7 +12,9 @@ from app.scheduler import start_scheduler, stop_scheduler
 
 settings = get_settings()
 
-# All migrations needed for queue system + opinions + numbering
+# (table, column, sql type) migrations applied idempotently to existing local
+# SQLite databases. Each ALTER TABLE errors safely (and is ignored) if the
+# column already exists.
 _COLUMN_MIGRATIONS = [
     ("topic_decisions", "credibility_score", "FLOAT"),
     ("topic_decisions", "domain_relevance", "FLOAT"),
@@ -26,11 +28,21 @@ _COLUMN_MIGRATIONS = [
     ("posts", "status", "VARCHAR(16) DEFAULT 'queued'"),
     ("posts", "published_at", "DATETIME"),
     ("posts", "overall_score", "FLOAT DEFAULT 0.0"),
+    # Per-post score breakdown, carried over from the TopicDecision that
+    # produced this post -- lets the public feed show real numbers (e.g.
+    # "DOMAIN MATCH: 82%") instead of the old hardcoded (94 - index * 2)%
+    # placeholder that had nothing to do with the actual post.
+    ("posts", "credibility_score", "FLOAT"),
+    ("posts", "domain_relevance", "FLOAT"),
+    ("posts", "technical_depth", "FLOAT"),
+    ("posts", "novelty_score", "FLOAT"),
 ]
 
 
 def _backfill_sequence_numbers() -> None:
-    """Assign sequence numbers to posts created before this feature existed."""
+    """Assign sequence numbers to posts created before this feature existed,
+    so an already-running deployment resumes numbering instead of restarting
+    at post one after upgrading."""
     db = SessionLocal()
     try:
         agents = db.query(Agent).filter(Agent.post_count == 0).all()
@@ -53,7 +65,12 @@ def _backfill_sequence_numbers() -> None:
 
 
 def _backfill_queue_status() -> None:
-    """Mark legacy posts as published."""
+    """Posts created before the publish-queue feature existed have no
+    `status`/`published_at` -- without this, the new "only show status ==
+    'published'" filter in get_feed would make every existing post vanish
+    from the UI. Anything that already has a sequence_number was clearly
+    already live, so mark it published (using created_at as its publish
+    time, since that's the closest we have)."""
     db = SessionLocal()
     try:
         legacy_posts = (
@@ -74,7 +91,7 @@ def _backfill_queue_status() -> None:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
 
-    # Apply all migrations idempotently
+    # Safely perform local SQLite database migrations on startup
     with engine.connect() as conn:
         for table, col_name, col_type in _COLUMN_MIGRATIONS:
             try:

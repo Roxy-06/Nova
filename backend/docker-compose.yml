@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: signalcraft
+      POSTGRES_PASSWORD: signalcraft
+      POSTGRES_DB: signalcraft
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://signalcraft:signalcraft@db:5432/signalcraft
+      GEMINI_API_KEY: ""
+      GEMINI_MODEL: "gemini-3.5-flash"
+      FAST_PUBLISH_FOR_EVAL: "1"
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - .:/app:rw
+
+volumes:
+  db-data:

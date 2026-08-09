@@ -94,6 +94,17 @@ class Post(Base):
     # Overall credibility index carried over from scoring, so the queue can
     # release the best-ranked queued item first rather than strict FIFO.
     overall_score: Mapped[float] = mapped_column(default=0.0)
+    # Individual score breakdown, carried over from the TopicDecision that
+    # produced this post. Denormalized here (not just left in
+    # TopicDecision) so the PUBLIC feed can show real per-post numbers --
+    # e.g. "DOMAIN MATCH: 82%" -- instead of the old placeholder formula
+    # (94 - index * 2)% that had nothing to do with the actual post.
+    # Nullable because posts published before this field existed won't have
+    # it; the frontend shows "N/A" rather than a fake number in that case.
+    credibility_score: Mapped[float | None] = mapped_column(nullable=True)
+    domain_relevance: Mapped[float | None] = mapped_column(nullable=True)
+    technical_depth: Mapped[float | None] = mapped_column(nullable=True)
+    novelty_score: Mapped[float | None] = mapped_column(nullable=True)
     text: Mapped[str] = mapped_column(Text)
     rationale: Mapped[str] = mapped_column(Text)
     sources: Mapped[list[str]] = mapped_column(JSON)

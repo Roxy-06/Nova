@@ -28,6 +28,10 @@ _COLUMN_MIGRATIONS = [
     ("posts", "status", "VARCHAR(16) DEFAULT 'queued'"),
     ("posts", "published_at", "DATETIME"),
     ("posts", "overall_score", "FLOAT DEFAULT 0.0"),
+    ("posts", "credibility_score", "FLOAT"),
+    ("posts", "domain_relevance", "FLOAT"),
+    ("posts", "technical_depth", "FLOAT"),
+    ("posts", "novelty_score", "FLOAT"),
 ]
 
 
@@ -83,14 +87,21 @@ def _backfill_queue_status() -> None:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
 
-    # Safely perform local SQLite database migrations on startup
-    with engine.connect() as conn:
-        for table, col_name, col_type in _COLUMN_MIGRATIONS:
+    # Safely perform local SQLite database migrations on startup.
+    # Each schema change is isolated so a failed ALTER TABLE does not leave
+    # the connection/transaction in a broken state for the next migration.
+    for table, col_name, col_type in _COLUMN_MIGRATIONS:
+        with engine.connect() as conn:
+            trans = conn.begin()
             try:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
-                conn.commit()
-            except Exception:
-                pass
+                trans.commit()
+            except Exception as exc:
+                trans.rollback()
+                error_text = str(exc).lower()
+                if "duplicate column" in error_text or "already exists" in error_text:
+                    continue
+                raise
 
     _backfill_sequence_numbers()
     _backfill_queue_status()

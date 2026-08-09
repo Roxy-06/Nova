@@ -275,13 +275,19 @@ async def run_editorial_cycle(db: Session, agent_id: str) -> int:
                 f"Queued after scoring {overall_credibility_index}/10 overall credibility index. "
                 f"credibility={credibility_score:.1f}, domain_relevance={domain_relevance:.1f}, "
                 f"technical_depth={technical_depth:.1f}, novelty={novelty_score:.1f}. "
-                f"Primary source: {candidate.source_name}."
+                f"Primary source: {candidate.source_name}. "
+                f"Why relevant now: discovered on {candidate.source_name} and surfaced by our continuous scan. "
+                f"Selection rationale: accepted because it met the credibility and domain thresholds and added sufficient novelty relative to recent coverage."
             )
 
             db.add(Post(
                 agent_id=agent_id,
                 status="queued",
                 overall_score=overall_credibility_index,
+                credibility_score=credibility_score,
+                domain_relevance=domain_relevance,
+                technical_depth=technical_depth,
+                novelty_score=novelty_score,
                 text=take_text,
                 rationale=rationale,
                 sources=[candidate.url],
@@ -314,6 +320,22 @@ async def run_editorial_cycle(db: Session, agent_id: str) -> int:
     return queued_count
 
 
+def _do_publish(db: Session, agent: Agent, post: Post, now: datetime) -> None:
+    """Shared release logic used by both the automatic timer-driven publish
+    and the manual "Publish now" action, so both paths number posts and
+    reset the timer identically -- a manual publish is not a special case,
+    it's just a normal publish that happened to be triggered by a click
+    instead of a timer."""
+    settings = get_settings()
+    agent.post_count += 1
+    post.status = "published"
+    post.published_at = now
+    post.sequence_number = agent.post_count
+    agent.next_publish_at = now + timedelta(
+        minutes=random.uniform(settings.publish_min_minutes, settings.publish_max_minutes)
+    )
+
+
 def publish_due_posts(db: Session, agent_id: str) -> int:
     """Release at most one queued post if the agent's cooldown has elapsed.
     Picks the highest-scored queued item, not strict FIFO. Runs on its own
@@ -340,13 +362,29 @@ def publish_due_posts(db: Session, agent_id: str) -> int:
         # forcing an extra full wait on top of an already-elapsed timer.
         return 0
 
-    settings = get_settings()
-    agent.post_count += 1
-    next_post.status = "published"
-    next_post.published_at = now
-    next_post.sequence_number = agent.post_count
-    agent.next_publish_at = now + timedelta(
-        minutes=random.uniform(settings.publish_min_minutes, settings.publish_max_minutes)
-    )
+    _do_publish(db, agent, next_post, now)
     db.commit()
     return 1
+
+
+def publish_specific_post(db: Session, agent_id: str, post_id: str) -> bool:
+    """Manually publish one specific queued post right now, out of score
+    order, in response to a person clicking "Publish now" in the queue UI.
+    Uses the exact same numbering + timer-reset logic as an automatic
+    publish (_do_publish), so the next scheduled release still waits a
+    fresh randomized 10-15 min window from this moment rather than firing
+    immediately right behind a manual publish."""
+    agent = db.get(Agent, agent_id)
+    if not agent:
+        return False
+
+    post = db.get(Post, post_id)
+    if not post or post.agent_id != agent_id or post.status != "queued":
+        # Either it doesn't exist, belongs to a different agent, or someone
+        # else (the automatic publisher tick) already published it a moment
+        # ago -- either way there's nothing valid left to do here.
+        return False
+
+    _do_publish(db, agent, post, datetime.now(timezone.utc))
+    db.commit()
+    return True

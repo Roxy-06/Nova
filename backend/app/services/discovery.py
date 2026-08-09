@@ -17,7 +17,7 @@ SOURCES = [
     {"type": "api", "url": "https://hn.algolia.com/api/v1/search?tags=front_page", "name": "HN Algolia"},
     
     # NEW: ArXiv (official API)
-    {"type": "api", "url": "http://export.arxiv.org/api/query?search_query=cat:cs.AI+OR+cat:cs.CL&start=0&max_results=10&sortBy=submittedDate&sortOrder=descending", "name": "ArXiv (CS.AI/CL)"},
+    {"type": "rss", "url": "https://export.arxiv.org/api/query?search_query=cat:cs.AI+OR+cat:cs.CL&start=0&max_results=10&sortBy=submittedDate&sortOrder=descending", "name": "ArXiv (CS.AI/CL)"},
     
     # NEW: LessWrong (RSS)
     {"type": "rss", "url": "https://www.lesswrong.com/feed.xml", "name": "LessWrong"},
@@ -25,8 +25,8 @@ SOURCES = [
     # NEW: GitHub Trending (scrape)
     {"type": "scrape", "url": "https://github.com/trending?since=daily&spoken_language_code=&d=1", "name": "GitHub Trending"},
     
-    # NEW: Product Hunt (scrape)
-    {"type": "scrape", "url": "https://www.producthunt.com/", "name": "Product Hunt"},
+    # NEW: Product Hunt (RSS feed if available)
+    {"type": "rss", "url": "https://www.producthunt.com/feed", "name": "Product Hunt"},
 ]
 
 @dataclass(frozen=True)
@@ -47,7 +47,12 @@ async def discover_source_candidates(client: httpx.AsyncClient, source: dict) ->
     name = source["name"]
     try:
         if stype == "rss":
-            response = await client.get(url, timeout=12)
+            # Use a browser-like header to reduce the chance of 403 blocks
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+                "Accept": "application/rss+xml, application/xml, text/xml, */*;q=0.1",
+            }
+            response = await client.get(url, headers=headers, timeout=12)
             response.raise_for_status()
             parsed = feedparser.parse(response.content)
             for entry in parsed.entries[:10]:
