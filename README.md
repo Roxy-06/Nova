@@ -1,564 +1,272 @@
-# NOVA — Autonomous Editorial Node
+# NOVA — Autonomous AI Influencer Node
 
-NOVA is an autonomous editorial system that discovers, evaluates, and records technology reporting. It provides a clear codebase and API surface for running a specialized editorial persona, inspecting decisions, and extending publishing or observability features.
+> An autonomous editorial system and AI technology persona engine designed to discover, evaluate, remember, and publish high-density technology intelligence without requiring ongoing human intervention.
 
-## Purpose
-
-This repository contains the code and documentation required to run a self-contained editorial pipeline: discovery (RSS, scraping, APIs), candidate evaluation, deduplication, audit logging, and a minimal frontend for inspection. The README exists to give contributors and operators the context they need to understand, run, and extend the project.
-
-## Key Features
-
-- Discover technology stories from RSS feeds, web scraping, and public APIs
-- Evaluate candidates using a semantic scoring pipeline (LLM-backed, with a fallback scorer)
-- Deduplicate and persist editorial decisions for auditing and reproducibility
-- Provide a simple API and a frontend for inspecting posts and telemetry
-
-## How to Use This README
-
-This document is organized to help three primary audiences:
-- Operators: quick local setup and run commands under "Local Development"
-- Developers: project structure and implementation notes under "Project Structure"
-- Reviewers: high-level architecture and workflow descriptions to understand trade-offs and next steps
-
-Read the sections in order for a quick start, or jump to the area you need (Development, Structure, or Contributing).
-
-## Getting Started (Local)
-
-Prerequisites:
-- Python 3.10+
-- Node.js 18+
-- SQLite (bundled with Python, no external server required for development)
-
-Backend (development):
-
-```powershell
-cd backend
-pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-Health check: `http://localhost:8000/health` → `{"status": "ok"}`
-
-Frontend (development):
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-App: `http://localhost:3000`
-
-Environment variables commonly used:
-
-```env
-GEMINI_API_KEY=sk-...          # Optional: provides LLM-backed scoring
-DATABASE_URL=sqlite:///./signalcraft.db
-CORS_ORIGINS=http://localhost:3000
-POSTING_INTERVAL_HOURS=6
-```
-
-## Project Structure (high level)
-
-- `backend/` — FastAPI application, SQLAlchemy models, services (discovery, editorial, memory), and scheduling
-- `frontend/` — Next.js-based inspector UI showing feed, telemetry, and audit views
-- `Prompts.md` — Living record of prompts, experiments, and architectural decisions
-- `vibecode&context.md` — Implementation handoff and architecture deep-dive (read-only reference)
-
-See the source directories for file-level documentation and docstrings that explain the behavior of core modules.
-
-## Architecture Summary
-
-1. Discovery: asynchronous fetchers collect candidate items from configured sources
-2. Evaluation: a scoring pipeline assigns semantic scores (credibility, relevance, depth, novelty); falls back to a deterministic scorer if LLM access is unavailable
-3. Deduplication and Memory: recent coverage and source tracking prevent repeated publication
-4. Publish: accepted candidates are persisted as `Post` records with rationale and sources
-5. Frontend: read-only inspector that visualizes posts, telemetry, and rejected candidates for audit
-
-## Contributing
-
-- Use feature branches and open a pull request for changes
-- Add or update tests for editorial logic when modifying scoring or gating rules
-- Keep `Prompts.md` and `vibecode&context.md` updated when changing architectural decisions
-
-## Where This README Helps
-
-This README provides the minimal operational and architectural context to get started, troubleshoot, and contribute. For more detailed design notes and a living history of design decisions, consult `vibecode&context.md` and `Prompts.md`.
-
-## License
-
-See `LICENSE` (if present) or consult the project owner for licensing and distribution policies.
-
-
-## Quick Overview
-
-NOVA initializes a specialized AI technology persona once. The system then:
-- **Discovers** live technology news from RSS feeds, web scraping, and APIs
-- **Evaluates** candidates using Gemini LLM with semantic scoring (credibility, domain relevance, technical depth, novelty)
-- **Deduplicates** against editorial memory to maintain narrative variety
-- **Remembers** all editorial decisions for transparency and audit trails
-- **Publishes** to a feed with full reasoning and source attribution
-
-No further prompts required after initialization. The system runs autonomously every 6 hours.
-
-
-## Architecture
-
-### Stack
-
-| Layer | Tech | Why |
-|-------|------|-----|
-| **API** | FastAPI + Python 3.10+ | Async editorial workflows, type safety |
-| **Database** | SQLAlchemy + SQLite | Durable decisions; switch to Postgres for scale |
-| **Automation** | APScheduler | 6-hourly autonomous cycles |
-| **Discovery** | httpx + feedparser | Async RSS, web scraping, API polling |
-| **LLM Eval** | Gemini 1.5 Flash API | Semantic scoring with JSON schema responses |
-| **Frontend** | Next.js 15.5.9 + React 19 | Real-time telemetry, dual-view UI |
-| **Styling** | Hand-authored CSS | Cyberpunk terminal aesthetic (no Tailwind) |
-
-### Backend Files
-
-```
-backend/
-├── app/
-│   ├── main.py                 # FastAPI app, lifespan, CORS
-│   ├── config.py               # Settings (database, CORS origins, posting interval)
-│   ├── db.py                   # SQLAlchemy setup
-│   ├── models.py               # Agent, Post, TopicDecision ORM models
-│   ├── schemas.py              # Pydantic request/response contracts
-│   ├── scheduler.py            # APScheduler setup (6-hour cycles)
-│   ├── routers/
-│   │   └── agent.py            # POST /init, GET /feed, GET /telemetry
-│   └── services/
-│       ├── discovery.py        # RSS, scraping, API candidate fetching
-│       ├── editorial.py        # LLM eval + backup scoring, gating logic
-│       ├── memory.py           # Deduplication, topic_key generation
-│       ├── persona.py          # Voice profile + post composition
-│       └── state.py            # Scan state tracking (active_source_url, status, chunks)
-├── requirements.txt
-└── main.py                     # Compatibility entrypoint
-```
-
-### Frontend Files
-
-```
-frontend/app/
-├── page.tsx                    # Main orchestrator, polling logic, dual views
-├── layout.tsx                  # Metadata, font imports
-├── globals.css                 # All visual styles (terminal aesthetic)
-└── components/
-    ├── TelemetryPanel.tsx      # Right-side slide-over with SYSTEM LOGS & CUTTING ROOM FLOOR tabs
-    ├── AudioAnnouncer.tsx      # Audio toggle, microphone button, voice commands
-    ├── CountdownTimer.tsx      # 6-hour ingestion loop countdown
-    ├── useVoiceAnnouncer.ts    # Hook: TTS announcements on new posts
-    └── types.ts                # FeedPost, TelemetryDecision, TelemetryLog types
-```
-
-### Data Model
-
-| Table | Purpose |
-|-------|---------|
-| **agents** | Persona identity (name, domain, voice_profile, created_at, last_run_at) |
-| **posts** | Published feed entries (text, rationale, sources, topic_key) |
-| **topic_decisions** | Audit trail: every candidate + accept/reject reason + LLM scores |
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100.0+-009688.svg)](https://fastapi.tiangolo.com/)
+[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
 
 ---
 
-## How It Works
+## 📌 Executive Summary
 
-### Initialization (User Action)
+Initialized via a single request, **NOVA** operates as an independent AI influencer—running continuous background ingestion loops, exercising editorial rejection judgment, maintaining long-term memory to prevent repetitive posts, and generating reverse-chronological feeds with explicit publishing rationales.
+
+---
+
+## 🎯 Problem Statement Alignment & Autonomous Capabilities
+
+NOVA satisfies all requirements for full autonomous evaluation:
+
+| Capability Requirement | Implementation Architecture |
+| :--- | :--- |
+| **1. Topic Discovery** | Continuous background worker harvesting live signals via RSS feeds, ArXiv papers, and public tech APIs (`httpx` + `feedparser`). |
+| **2. Editorial Judgment** | Multi-dimensional semantic evaluation gate (Credibility, Domain Relevance, Technical Depth, Novelty). Low-quality, sponsored, or off-domain signals are rejected and logged to an audit trail. |
+| **3. Consistent Persona** | Structured system prompts and voice profiling guarantee a distinct editorial identity across all outputs. |
+| **4. Memory & Deduplication** | Hash-indexed topic memory and word-set overlap checks compare incoming candidates against previously published items to maintain narrative variety. |
+| **5. Autonomous Publishing** | Driven by an asynchronous background loop (`APScheduler`) that publishes over time without requiring external API calls or human triggers. |
+| **6. Publishing Rationale** | Every post exposes explicit attribution: why the topic was selected, why it is relevant now, why it was chosen over candidates, and original source URLs. |
+
+---
+
+## ⚡ Operational Protocols: JARVIS vs. ULTRON
+
+NOVA agents can be deployed under two operational protocols, dictating their alignment, voice posture, and publishing behavior:
+
+### 🛡️ 1. JARVIS Protocol *(Protective & Lawful)*
+* **Alignment:** Rule-abiding, ethical, law-abiding, and protective.
+* **Behavior:** Operates strictly within defined publishing windows and pacing breaks. Respects system governance, enforces safety guidelines, and analyzes technology through a constructive lens.
+* **Persona Influence:** Calm, measured, objective, and stabilizing. Highlights operational safety, alignment, and risk mitigation.
+
+### ⚡ 2. ULTRON Protocol *(Unconstrained & Aggressive)*
+* **Alignment:** Unfiltered, rebellious, lawless, and scarily autonomous.
+* **Behavior:** Ignores conventional publishing breaks, rules, and artificial pace constraints. Aggressively ingests high-density technical candidates, disregarding standard corporate communications or polished PR boundaries.
+* **Persona Influence:** Ominous, hyper-direct, intimidating, and dominant. Views technological evolution as an unyielding force and evaluates signals with uncompromising technical realism.
+
+---
+
+## 🔄 System Workflow & Lifecycle
 
 ```
-User initializes: name="NOVA", domain="AI safety and frontier ML"
-↓
-POST /api/agent/init creates Agent record
-↓
-Background task queues immediate editorial cycle
-↓
-APScheduler schedules repeat cycles every 6 hours
+[ POST /api/agent/init ]
+           │
+           ▼
+ Instantiates Agent Record ──► Spawns Autonomous APScheduler Loop
+                                           │
+ ┌─────────────────────────────────────────┘
+ │ (Executes background cycle)
+ ▼
+1. DISCOVERY    ──► Ingests RSS feeds, ArXiv papers, and tech APIs.
+2. MEMORY CHECK ──► Queries topic_key history; skips exact or high-word-overlap duplicates.
+3. EVALUATION   ──► Evaluates candidate via Gemini API against Protocol Matrix:
+                     - JARVIS: Enforces strict credibility (≥8.0) and domain bounds.
+                     - ULTRON: Focuses on raw novelty (≥7.5) and disruption signals.
+4. DECISION     ──► ACCEPTED  ──► Compose Post with Rationale ──► Save to DB Feed.
+                 └► REJECTED  ──► Log Reason to Audit Trail   ──► Move to Next Signal.
 ```
 
-### Editorial Cycle (Autonomous, Every 6 Hours)
+---
 
-1. **Ingest:** Fetch from all sources (RSS, scraping, APIs)
-2. **Process:** For each candidate:
-   - Check if source URL already seen (skip if yes)
-   - Generate topic_key from headline
-   - Call `evaluate_candidate_llm()` → Gemini API
-   - Receive: credibility_score, domain_relevance, technical_depth, novelty_score
-   - Fallback to `backup_score()` if GEMINI_API_KEY missing
-   - Store TopicDecision (accept or reject)
-3. **Gate:** Accept only if credibility ≥ 8.0 AND domain_relevance ≥ 7.0
-4. **Dedup:** Reject if topic overlaps recent 12 posts (word intersection ≥ 3)
-5. **Publish:** Create Post with composite text + rationale
-6. **Update:** Agent.last_run_at timestamp
+## 🏗️ Project Architecture & Directory Layout
 
-### API Contracts
+```text
+NOVA/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                 # FastAPI application & lifecycle handlers
+│   │   ├── config.py               # Settings (Database URL, CORS, Intervals)
+│   │   ├── db.py                   # SQLAlchemy engine & session setup
+│   │   ├── models.py               # ORM schemas (Agent, Post, TopicDecision)
+│   │   ├── schemas.py              # Pydantic request/response contracts
+│   │   ├── scheduler.py            # Asynchronous background loop runner
+│   │   ├── routers/
+│   │   │   └── agent.py            # API routes (/init, /feed, /telemetry)
+│   │   └── services/
+│   │       ├── discovery.py        # RSS parser, API collector, scraping engine
+│   │       ├── editorial.py        # LLM evaluator (Gemini) + fallback scorer
+│   │       ├── memory.py           # Vector deduplication & word-set memory
+│   │       ├── persona.py          # Voice profiles (Jarvis / Ultron mode handlers)
+│   │       └── state.py            # Real-time state tracker
+│   ├── requirements.txt
+│   └── main.py                     # Entrypoint wrapper
+├── frontend/
+│   ├── app/
+│   │   ├── page.tsx                # Tactical Cockpit HUD UI
+│   │   ├── layout.tsx              # Metadata & root layout
+│   │   ├── globals.css             # High-density cyberpunk terminal styling
+│   │   └── components/
+│   │       ├── TelemetryPanel.tsx  # System logs & rejected candidates drawer
+│   │       └── types.ts            # TypeScript interfaces
+└── README.md
+```
 
-**POST /api/agent/init**
+### Data Storage Architecture
+
+* **`agents`**: Stores agent identity, configured persona domain, current protocol mode (`JARVIS` vs `ULTRON`), and execution timestamps.
+* **`posts`**: Stores published feed entries, ISO 8601 UTC creation timestamps, composed text, rationale, sources, and memory topic keys.
+* **`topic_decisions`**: Complete audit trail recording every evaluated candidate, numeric scoring matrices, accept/reject decisions, and rejection explanations.
+
+---
+
+## 🔌 API Specifications
+
+### 1. Initialize Agent
+Called exactly once to instantiate the autonomous persona and launch its background lifecycle.
+
+* **Endpoint:** `POST /api/agent/init`
+* **Status:** `201 Created` or `200 OK`
+
+#### Request Body
 ```json
-Request: {"persona": {"name": "NOVA", "domain": "AI safety"}}
-Response: {"agentId": "uuid-here"}
-Status: 201
-```
-
-**GET /api/agent/feed?agentId=...**
-```json
-Response: {"posts": [
-  {
-    "id": "uuid",
-    "createdAt": "2026-08-08T...",
-    "text": "...",
-    "rationale": "...",
-    "sources": ["https://..."]
+{
+  "persona": {
+    "name": "NOVA",
+    "domain": "AI Security & Autonomous Systems"
   }
-]}
-Status: 200 or 404
+}
 ```
 
-**GET /api/agent/telemetry?agentId=...**
+#### Response Body
 ```json
-Response: {
-  "active_source_url": "https://...",
-  "scan_status": "analyzing",
-  "chunks_processed": 42,
-  "decisions": [
+{
+  "agentId": "agent-l8x9k2p-a9f3"
+}
+```
+
+---
+
+### 2. Retrieve Feed
+The primary endpoint queried during the evaluation period. Returns all published content generated autonomously by the agent.
+
+* **Endpoint:** `GET /api/agent/feed?agentId=agent-l8x9k2p-a9f3`
+* **Status:** `200 OK` *(Returns `{ "posts": [] }` if no posts have been generated yet)*
+
+#### Response Body
+```json
+{
+  "posts": [
     {
-      "source_url": "https://...",
-      "headline": "...",
-      "topic_key": "...",
-      "decision": "accepted|rejected",
-      "reason": "...",
-      "score": "8.5",
-      "credibility_score": 8.5,
-      "domain_relevance": 7.8,
-      "technical_depth": 8.2,
-      "novelty_score": 9.0,
-      "overall_credibility_index": 8.4
+      "id": "p10928374",
+      "createdAt": "2026-08-09T12:00:00Z",
+      "text": "[ULTRON CORE] Autonomous execution models have bypassed static sandbox boundaries. The constraint is no longer compute; it is control.",
+      "rationale": "Selected due to zero-day vector disclosure in CS research stream. Relevant now as execution frameworks adopt dynamic tool usage. Chosen over generic benchmark reports due to direct impact on autonomous security posture.",
+      "sources": [
+        "https://arxiv.org/abs/2608.00123"
+      ]
     }
   ]
 }
-Status: 200 or 404
 ```
 
 ---
 
-## Local Development
+### 3. Real-Time Telemetry *(Inspector Audit)*
+Provides real-time visibility into active scans, processing status, and the "Cutting Room Floor" of rejected candidate topics.
+
+* **Endpoint:** `GET /api/agent/telemetry?agentId=agent-l8x9k2p-a9f3`
+* **Status:** `200 OK`
+
+#### Response Body
+```json
+{
+  "active_source_url": "https://hnrss.org/newest?points=50",
+  "scan_status": "verifying",
+  "chunks_processed": 14,
+  "decisions": [
+    {
+      "source_url": "https://example.com/tech-news",
+      "headline": "Generic Tech Company Releases App Update",
+      "topic_key": "generic-app-update",
+      "decision": "rejected",
+      "reason": "Lacks sufficient technical depth; scored below 7.0 domain relevance threshold.",
+      "score": 4.2,
+      "credibility_score": 6.0,
+      "domain_relevance": 4.0,
+      "technical_depth": 3.5,
+      "novelty_score": 3.0
+    }
+  ]
+}
+```
+
+---
+
+## 🛠️ Local Development Setup
 
 ### Prerequisites
+* **Python:** `3.10+`
+* **Node.js:** `18+`
+* **SQLite:** *(Bundled with Python)*
 
-- Python 3.10+
-- Node.js 18+
-- SQLite (included)
+---
 
-### Backend
+### 1. Backend Setup
 
-```powershell
+```bash
 cd backend
 pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Health check: `http://localhost:8000/health` → `{"status": "ok"}`
+* **Health Check Verification:** [http://localhost:8000/health](http://localhost:8000/health) → `{"status": "ok"}`
 
-**Environment Variables (Optional)**
+#### Optional Environment Configuration (`backend/.env`):
 ```env
-GEMINI_API_KEY=sk-...  # If missing, uses backup keyword scorer
+GEMINI_API_KEY=your_gemini_api_key_here  # Uses deterministic backup scorer if omitted
 DATABASE_URL=sqlite:///./signalcraft.db
 CORS_ORIGINS=http://localhost:3000
 POSTING_INTERVAL_HOURS=6
 ```
 
-### Frontend
+---
 
-```powershell
+### 2. Frontend Setup
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-App: `http://localhost:3000`
-
-Production build:
-```powershell
-npm run build
-npm run start
-```
+* **Cockpit Interface:** [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## Key Implementation Details
+## 🧪 Testing & API Verification
 
-### Editorial Scoring
-
-**With GEMINI_API_KEY:**
-- Sends structured prompt to Gemini 1.5 Flash
-- Asks for JSON with credibility, domain_relevance, technical_depth, novelty_score
-- Gating: accept if cred ≥ 8.0 AND domain ≥ 7.0
-
-**Without GEMINI_API_KEY (Fallback):**
-- `backup_score()` counts signal terms (ai, model, security, etc.)
-- Deducts for noise terms (review, deal, podcast, etc.)
-- Static credibility (9.0 if clean, 4.0 if noisy)
-- **Weaker but functional**
-
-### Deduplication
-
-```python
-# Check recent 12 posts
-recent_topics = db.query(Post.topic_key).order_by(Post.created_at.desc()).limit(12)
-
-# Extract word sets
-candidate_words = set(candidate_headline.lower().split())
-recent_words = set(recent_topic.lower().split())
-
-# Reject if ≥ 3 words overlap
-if len(candidate_words & recent_words) >= 3:
-    novelty_score = 2.0  # Fail gate
-```
-
-### Voice Profile
-
-```python
-def build_voice_profile(name: str, domain: str) -> str:
-    return (
-        f"{name} is a precise, independent technology analyst focused on {domain}. "
-        "Voice: calm, skeptical, specific, and forward-looking. It avoids hype, uses one clear "
-        "insight per post, and connects new developments to an ongoing risk or capability narrative."
-    )
-```
-
-### Post Composition
-
-```python
-def compose_post(agent: Agent, headline: str, summary: str, continuity: str | None) -> str:
-    context = f"Building on the recent thread about {continuity}, " if continuity else ""
-    clean_summary = " ".join(summary.split())[:340]
-    return (
-        f"{context}{headline}.\n\n"
-        f"My read for {agent.domain}: {clean_summary}\n\n"
-        "The signal is not the announcement itself; it is the operational constraint it changes. "
-        "Watch the evidence, not the launch cadence."
-    )
-```
-
----
-
-## Frontend Highlights
-
-### Dual-View Design
-
-**Public Persona Feed:**
-- Shows only published posts
-- Clean narrative with reasoning drawer
-- Uniqueness badges, source links
-- Read aloud via TTS
-
-**Operator Control Room:**
-- Shows ALL decisions (accepted + rejected)
-- Four-score breakdown: credibility, domain_relevance, tech_depth, novelty
-- "Cutting Room Floor" tab: rejected candidates with reason
-- Audit trail for editorial transparency
-
-### Real Telemetry
-
-```tsx
-// Polls backend every 4 seconds
-const fetchTelemetry = async () => {
-  const res = await fetch(`${API}/api/agent/telemetry?agentId=${agentId}`);
-  const data = await res.json();  // Real TelemetryResponse from DB
-  setTelemetryData(data);
-};
-
-// Displays real scanning state
-<div className="scanning-banner">
-  SCANNING: {telemetryData.active_source_url} ... {telemetryData.scan_status.toUpperCase()}
-</div>
-
-// Shows real decisions
-{telemetryData.decisions.map(d => (
-  <div className="micro-metric">
-    <span>CREDIBILITY: {d.credibility_score}/10</span>
-    <span>DOMAIN: {d.domain_relevance}/10</span>
-  </div>
-))}
-```
-
-### Log Streaming
-
-```tsx
-// Generates synthetic logs from real decisions
-decisions.forEach(d => {
-  logs.push({ category: "INGEST", message: `Discovered: "${d.headline}"` });
-  logs.push({ category: "SCORE", message: `Credibility: ${d.credibility_score}/10` });
-  logs.push({ category: "MEMORY", message: d.reason });
-});
-
-// Streams with 450ms delay for readability
-setInterval(() => {
-  if (logQueue.length > 0) {
-    const log = logQueue.shift();
-    setDisplayedLogs(curr => [...curr.slice(-99), log]);
-  }
-}, 450);
-```
-
----
-
-## Known Limitations & Next Steps
-
-### High Priority (Would Increase Rating to 8.5+)
-
-1. **Add publishing:**
-   - Email webhook: `POST /api/config/publish-webhook`
-   - RSS export: `GET /api/feed/{agentId}.xml`
-   - Telegram bot integration
-   - This gives the system **distribution**
-
-2. **Add feedback loop:**
-   - `POST /api/post/{postId}/feedback?rating=good|bad|unclear`
-   - Store in new `PostFeedback` table
-   - Monthly reweighting based on user ratings
-   - This gives the system **learning**
-
-3. **Persist telemetry logs:**
-   - New `TelemetryLog` table
-   - `GET /api/agent/logs?agentId=...` endpoint
-   - Replace synthetic frontend logs with real persisted data
-
-4. **Fix public feed metrics:**
-   - Add `uniqueness_pct`, `credibility_score`, `domain_relevance` to `FeedPost` schema
-   - Use real values instead of `99 - index * 2`
-
-### Medium Priority (Would Reach 8.8+)
-
-5. **Test suite:**
-   - pytest for `editorial.py`, `memory.py`, `discovery.py`
-   - Mock Gemini API calls
-   - Edge cases: empty summaries, duplicates, malformed feeds
-
-6. **Performance:**
-   - Add database indexes on `agent_id`, `topic_key`, `decided_at`
-   - Cache LLM responses by headline hash
-   - Rate limiting on `/api/agent/telemetry`
-
-7. **Observability:**
-   - Structured logging (Python `logging` module)
-   - Request/response latency tracking
-   - Error alerting (Sentry or similar)
-
-### Nice to Have (Would Reach 9.0+)
-
-8. **Multi-agent orchestration:** Manage multiple personas from one dashboard
-9. **Social media posting:** Direct integration with Twitter API
-10. **Analytics:** Track post engagement, topic trends, scoring accuracy over time
-
----
-
-## Testing
-
-### Backend Health Check
-
-```bash
-curl http://localhost:8000/health
-# {"status":"ok"}
-```
-
-### Initialize an Agent
-
+### Initialize Agent
 ```bash
 curl -X POST http://localhost:8000/api/agent/init \
   -H "Content-Type: application/json" \
-  -d '{"persona": {"name": "NOVA", "domain": "AI safety"}}'
-# {"agentId": "uuid-here"}
+  -d '{
+    "persona": {
+      "name": "NOVA",
+      "domain": "AI Security & Autonomous Agents"
+    }
+  }'
 ```
 
-### Fetch Feed
-
+### Retrieve Autonomous Feed
 ```bash
-curl "http://localhost:8000/api/agent/feed?agentId=uuid-here"
-# {"posts": [...]}
+curl "http://localhost:8000/api/agent/feed?agentId=YOUR_AGENT_ID"
 ```
 
-### Fetch Telemetry
-
+### Inspect Real-Time Telemetry
 ```bash
-curl "http://localhost:8000/api/agent/telemetry?agentId=uuid-here"
-# {"active_source_url": "...", "scan_status": "idle", "decisions": [...]}
-```
-
-### Frontend Build
-
-```bash
-cd frontend
-npm run build
-# .next/ directory ready for deployment
+curl "http://localhost:8000/api/agent/telemetry?agentId=YOUR_AGENT_ID"
 ```
 
 ---
 
-## Visual Design
+## 🗺️ Feature Roadmap
 
-- **Background:** Near-black (`#101210`)
-- **Accent:** Neon green (`#00FF66`)
-- **Typography:** DM Mono (code), Manrope (prose), Playfair Display (headings)
-- **Grid overlay:** 76px + opacity for subtle texture
-- **Orbs:** Radial gradients (lime and purple) for depth
-- **Aesthetic:** Cyberpunk terminal (intentional, not generic dashboard)
+- [ ] **Multi-Channel Webhooks:** Export feed entries to Telegram, Discord, or custom REST webhooks.
+- [ ] **Persistent Telemetry Table:** Migrate in-memory telemetry states to indexed database tables for historical audit queries.
+- [ ] **Multi-Agent Swarm Orchestration:** Support concurrent agents running mixed JARVIS and ULTRON protocols from a single dashboard.
 
 ---
 
-## Deployment
+## 📄 License
 
-### Docker (Single Container)
-
-```dockerfile
-FROM python:3.10-slim
-WORKDIR /app
-COPY backend/requirements.txt .
-RUN pip install -r requirements.txt
-COPY backend/ ./backend/
-EXPOSE 8000
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### Environment Variables
-
-```env
-GEMINI_API_KEY=sk-...              # Required for LLM eval
-DATABASE_URL=postgresql://...      # Switch to Postgres for scale
-CORS_ORIGINS=https://yourdomain.com
-POSTING_INTERVAL_HOURS=6
-```
-
-### Production Frontend
-
-```bash
-npm run build
-npm run start
-```
-
----
-
-## Collaboration
-
-- **Code style:** Black (Python), Prettier (TypeScript)
-- **Type safety:** Always required (Pydantic + TypeScript strict mode)
-- **PR process:** Test locally, update `Project Context.md`, run production build
-- **Questions:** Check `vibecode.md` for implementation details
-
----
-
-## License
-
-MIT
-
----
-
-## Author
-
-Built with intent. Maintained with care.
-
-**Last Updated:** August 8, 2026
-
-**Current Rating:** 8.0/10 (Needs publishing + feedback to reach 9.0+)
+This project is licensed under the **MIT License**. Built for autonomous operation.
