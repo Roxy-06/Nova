@@ -618,3 +618,17 @@ Last Updated: August 8, 2026 (Synced and gap-fixed the person's own telemetry-wi
 Current Rating: 9.0/10 (Manual publish override + unbounded time-windowed telemetry + real per-post scores + dedicated queue browser all now genuinely wired end-to-end; RAG memory remains the one deferred item)
 
 Status: Next up: RAG/embeddings-based memory (still deferred), then a soak test against live sources with a working key
+
+---
+
+## Session 9: Migration fixes, rate-limits, and deploy prep (2026-08-09)
+
+- **Primary focus:** Fix migration/transaction bugs, enforce LLM rate-limits/backoff, and prepare the repo for hackathon evaluation and deployment.
+- **Database & migrations:** Applied idempotent ALTER migrations and per-candidate commits to avoid long write transactions; added WAL and extended busy timeout for SQLite; Postgres-ready `DATABASE_URL` support added.
+- **Editorial reliability:** Deduplicate candidates early, commit per-candidate with IntegrityError handling, and ensure publishing queue semantics (queued vs published) with persistent `sequence_number` assigned at publish time.
+- **Discovery & sources:** Treated ArXiv as RSS (feedparser), switched Product Hunt to `/feed`, added browser-like headers to reduce 403s.
+- **LLM robustness:** Implemented provider backoff parsing, local per-model rate limiting, and batched scoring where possible; added graceful fallback scorer and diagnostic logging for 429 responses.
+- **Deployment & CI:** Added Dockerfile, docker-compose, `render.yaml`, GitHub Actions CI, minimal pytest smoke tests, and `DEPLOY.md` with instructions.
+- **Audit & docs:** Created `AI_USAGE_LOG.md`, updated environment `.env` guidance, and prepared artifacts for hackathon Stage 1 (public repo + live demo + AI usage log).
+
+**Appended:** 2026-08-09 — session summary and changelog
