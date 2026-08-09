@@ -15,12 +15,11 @@ __pycache__/
 venv/
 env/
 
-# SQLite local databases (never commit local state)
-*.db
-*.db-shm
-*.db-wal
-
 # Environment files
 .env
 .env.*
 
+# SQLite databases (local state — must not be committed)
+*.db
+*.db-shm
+*.db-wal
