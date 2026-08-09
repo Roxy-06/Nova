@@ -11,7 +11,10 @@
 //
 // The trailing slash is stripped so callers can safely append "/api/...".
 
-const RENDER_BACKEND_URL = "https://nova-backend.onrender.com";
+// Actual Render backend URL for the "Nova" service (service id
+// srv-d9s4sclbedkc73cspjc0). Keep in sync with the NEXT_PUBLIC_API_BASE env
+// var set on the Vercel frontend project.
+const RENDER_BACKEND_URL = "https://nova-i72b.onrender.com";
 const LOCAL_BACKEND_URL = "http://localhost:8000";
 
 export function getApiBase(): string {
