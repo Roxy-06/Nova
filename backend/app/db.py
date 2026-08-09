@@ -5,15 +5,22 @@ from app.config import get_settings
 
 settings = get_settings()
 database_url = getattr(settings, "database_url", "sqlite:///./signalcraft.db")
+# Cloud Postgres providers (e.g. Render, Supabase, Neon) often export
+# DATABASE_URL starting with postgres://. SQLAlchemy 1.4+ and 2.0 require postgresql://.
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
 is_sqlite = database_url.startswith("sqlite")
-# `timeout` here is SQLite's busy-wait: how long a connection will patiently
-# wait for a lock held by another connection before raising "database is
-# locked", instead of failing after the driver default of 5s. With the
-# editorial loop now running continuously in the background, some overlap
-# with API requests (e.g. POST /api/agent/init) is expected and should wait,
-# not error. For Postgres we don't use these sqlite-only options.
-connect_args = {"check_same_thread": False, "timeout": 30} if is_sqlite else {}
-engine = create_engine(database_url, connect_args=connect_args)
+
+# SQLite needs concurrency pragmas/timeout; Postgres needs connection recycling and health pinging.
+engine_kwargs = {}
+if is_sqlite:
+    engine_kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+else:
+    engine_kwargs["pool_pre_ping"] = True
+    engine_kwargs["pool_recycle"] = 300
+
+engine = create_engine(database_url, **engine_kwargs)
 
 if is_sqlite:
     @event.listens_for(engine, "connect")

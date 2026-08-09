@@ -3,9 +3,11 @@ services:
     name: nova-backend
     env: docker
     dockerfilePath: backend/Dockerfile
-    branch: main
-    region: oregon
+    dockerContext: backend
     plan: free
+    region: oregon
+    branch: main
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         value: ""
@@ -13,20 +15,26 @@ services:
       - key: GEMINI_API_KEY
         value: ""
         sync: false
-    healthCheckPath: /health
-    serviceDetails:
-      # Use a 3-minute start timeout to allow initial migrations/backfills.
-      startCommand: ""
+      - key: GEMINI_MODEL
+        value: "gemini-2.5-flash"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: FAST_PUBLISH_FOR_EVAL
+        value: "0"
+
   - type: web
     name: nova-frontend
     env: node
-    branch: main
-    region: oregon
+    rootDir: frontend
     plan: free
-    buildCommand: "cd frontend && npm install && npm run build"
-    startCommand: "cd frontend && npm run start"
+    region: oregon
+    branch: main
+    buildCommand: "npm install && npm run build"
+    startCommand: "npm run start"
+    healthCheckPath: /
     envVars:
       - key: NEXT_PUBLIC_API_BASE
         value: ""
         sync: false
-    healthCheckPath: /
+      - key: NODE_VERSION
+        value: "20"

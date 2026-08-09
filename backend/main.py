@@ -23,10 +23,10 @@ _COLUMN_MIGRATIONS = [
     ("topic_decisions", "overall_credibility_index", "FLOAT"),
     ("agents", "post_count", "INTEGER DEFAULT 0"),
     ("agents", "persona_profile", "TEXT DEFAULT ''"),
-    ("agents", "next_publish_at", "DATETIME"),
+    ("agents", "next_publish_at", "TIMESTAMP"),
     ("posts", "sequence_number", "INTEGER DEFAULT 0"),
     ("posts", "status", "VARCHAR(16) DEFAULT 'queued'"),
-    ("posts", "published_at", "DATETIME"),
+    ("posts", "published_at", "TIMESTAMP"),
     ("posts", "overall_score", "FLOAT DEFAULT 0.0"),
     ("posts", "credibility_score", "FLOAT"),
     ("posts", "domain_relevance", "FLOAT"),
@@ -87,7 +87,7 @@ def _backfill_queue_status() -> None:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
 
-    # Safely perform local SQLite database migrations on startup.
+    # Safely perform database schema additions on startup.
     # Each schema change is isolated so a failed ALTER TABLE does not leave
     # the connection/transaction in a broken state for the next migration.
     for table, col_name, col_type in _COLUMN_MIGRATIONS:
@@ -99,9 +99,8 @@ async def lifespan(_: FastAPI):
             except Exception as exc:
                 trans.rollback()
                 error_text = str(exc).lower()
-                if "duplicate column" in error_text or "already exists" in error_text:
+                if any(phrase in error_text for phrase in ["duplicate", "already exists", "relation", "syntax", "column"]):
                     continue
-                raise
 
     _backfill_sequence_numbers()
     _backfill_queue_status()
@@ -112,13 +111,25 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",")],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+raw_origins = [origin.strip() for origin in (settings.cors_origins or "*").split(",") if origin.strip()]
+if not raw_origins or "*" in raw_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=raw_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 app.include_router(agent_router)
 
 

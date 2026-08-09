@@ -54,7 +54,7 @@ export default function AgentInitializePage() {
 
     try {
       // create agent via backend and navigate to console with agentId
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+      const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
       const res = await fetch(`${API_BASE}/api/agent/init`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { QueueView } from "../components/QueueView";
 import { PendingQueue } from "../components/PendingQueue";
@@ -10,7 +10,7 @@ import { AudioAnnouncer } from "../components/AudioAnnouncer";
 import { useVoiceAnnouncer } from "../components/useVoiceAnnouncer";
 import type { QueuedPost, FeedPost, TelemetryDecision } from "../components/types";
 
-export default function ConsolePage() {
+function ConsoleContent() {
   const search = useSearchParams();
   const router = useRouter();
   const agentId = search.get("agentId");
@@ -52,7 +52,7 @@ export default function ConsolePage() {
         // Needs auto initialization
         async function autoInit() {
           try {
-            const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
             const launchDomain = mode === "JARVIS" ? "Autonomous AI Systems" : "Autonomous Security & Override Matrix";
             const res = await fetch(`${API_BASE}/api/agent/init`, {
               method: "POST",
@@ -88,7 +88,7 @@ export default function ConsolePage() {
 
     async function loadAgent() {
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
         const res = await fetch(`${API_BASE}/api/agent/${agentId}`);
         if (!res.ok) throw new Error(`Agent not found (${res.status})`);
         const summary = await res.json();
@@ -105,7 +105,7 @@ export default function ConsolePage() {
   useEffect(() => {
     if (!agentId) return;
     let mounted = true;
-    const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
 
     async function fetchData() {
       try {
@@ -156,7 +156,7 @@ export default function ConsolePage() {
       router.push(`/console?${query}`);
     } else {
       try {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
         const res = await fetch(`${API_BASE}/api/agent/init`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -187,7 +187,7 @@ export default function ConsolePage() {
   };
 
   const handlePublishNow = async (postId: string) => {
-    const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
     try {
       const res = await fetch(`${API_BASE}/api/agent/queue/${postId}/publish-now?agentId=${agentId}`, { method: "POST" });
       if (res.ok) {
@@ -675,3 +675,18 @@ export default function ConsolePage() {
     </div>
   );
 }
+
+export default function ConsolePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#07090e] text-[#8ea0be] flex items-center justify-center font-mono text-sm">
+          INITIALIZING TERMINAL...
+        </div>
+      }
+    >
+      <ConsoleContent />
+    </Suspense>
+  );
+}
+

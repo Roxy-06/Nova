@@ -16,7 +16,5 @@ ENV PORT=8000
 
 EXPOSE 8000
 
-# Use Gunicorn with Uvicorn workers for production-grade process management.
-# Allow Render to set the PORT envvar; default to 8000.
-ENV PORT=8000
-CMD ["sh", "-c", "gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:$PORT"]
+# Use Gunicorn with a single Uvicorn worker so the background AI scanner loop runs as a single instance
+CMD ["sh", "-c", "gunicorn -w 1 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:$PORT"]
