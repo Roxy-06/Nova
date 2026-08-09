@@ -8,6 +8,7 @@ import { TelemetryPanel } from "../components/TelemetryPanel";
 import { CountdownTimer } from "../components/CountdownTimer";
 import { AudioAnnouncer } from "../components/AudioAnnouncer";
 import { useVoiceAnnouncer } from "../components/useVoiceAnnouncer";
+import { getApiBase } from "../lib/api";
 import type { QueuedPost, FeedPost, TelemetryDecision } from "../components/types";
 
 function ConsoleContent() {
@@ -52,7 +53,7 @@ function ConsoleContent() {
         // Needs auto initialization
         async function autoInit() {
           try {
-            const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+            const API_BASE = getApiBase();
             const launchDomain = mode === "JARVIS" ? "Autonomous AI Systems" : "Autonomous Security & Override Matrix";
             const res = await fetch(`${API_BASE}/api/agent/init`, {
               method: "POST",
@@ -88,7 +89,7 @@ function ConsoleContent() {
 
     async function loadAgent() {
       try {
-        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+        const API_BASE = getApiBase();
         const res = await fetch(`${API_BASE}/api/agent/${agentId}`);
         if (!res.ok) throw new Error(`Agent not found (${res.status})`);
         const summary = await res.json();
@@ -105,7 +106,7 @@ function ConsoleContent() {
   useEffect(() => {
     if (!agentId) return;
     let mounted = true;
-    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+    const API_BASE = getApiBase();
 
     async function fetchData() {
       try {
@@ -156,7 +157,7 @@ function ConsoleContent() {
       router.push(`/console?${query}`);
     } else {
       try {
-        const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+        const API_BASE = getApiBase();
         const res = await fetch(`${API_BASE}/api/agent/init`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -187,7 +188,7 @@ function ConsoleContent() {
   };
 
   const handlePublishNow = async (postId: string) => {
-    const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+    const API_BASE = getApiBase();
     try {
       const res = await fetch(`${API_BASE}/api/agent/queue/${postId}/publish-now?agentId=${agentId}`, { method: "POST" });
       if (res.ok) {
@@ -689,4 +690,3 @@ export default function ConsolePage() {
     </Suspense>
   );
 }
-

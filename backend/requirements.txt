@@ -4,6 +4,10 @@ sqlalchemy==2.0.36
 pydantic-settings==2.7.0
 httpx==0.28.1
 feedparser==6.0.11
-psycopg2-binary==2.9.7
 pytest>=7.4.0
-gunicorn==20.1.0
+# Postgres driver: required for Vercel serverless (SQLite cannot persist on
+# Vercel's ephemeral filesystem). Set DATABASE_URL to a managed Postgres URI
+# (e.g. Neon/Supabase) in the Vercel dashboard.
+psycopg2-binary==2.9.10
+# Gunicorn: required by the Dockerfile for the long-running Render path.
+gunicorn==23.0.0

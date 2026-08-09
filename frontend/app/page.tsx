@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { getApiBase } from "./lib/api";
 
 export default function AgentInitializePage() {
   const router = useRouter();
@@ -53,8 +54,8 @@ export default function AgentInitializePage() {
     setLoading(true);
 
     try {
-      // create agent via backend and navigate to console with agentId
-      const API_BASE = (process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000").replace(/\/+$/, "");
+// create agent via backend and navigate to console with agentId
+      const API_BASE = getApiBase();
       const res = await fetch(`${API_BASE}/api/agent/init`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

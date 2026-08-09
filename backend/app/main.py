@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +10,13 @@ from app.db import Base, SessionLocal, engine
 from app.models import Agent, Post
 from app.routers.agent import router as agent_router
 from app.scheduler import start_scheduler, stop_scheduler
+
+# Serverless guard: Vercel functions are short-lived and cannot host the
+# infinite background discovery/publisher loops. These only run under a
+# persistent process (e.g. Render/Docker, or `uvicorn` locally). Requests
+# still trigger an editorial cycle synchronously via the /init background
+# task and the scheduler's work is dispatched per-request instead.
+IS_SERVERLESS = os.environ.get("VERCEL", "") == "1"
 
 settings = get_settings()
 
@@ -109,9 +117,15 @@ async def lifespan(_: FastAPI):
     _backfill_sequence_numbers()
     _backfill_queue_status()
 
-    start_scheduler()
+    # Only start the long-running background loops in a persistent process.
+    # On Vercel serverless, the scheduler would spin forever and break the
+    # request lifecycle; instead, editorial work is dispatched per-request
+    # (see the /init endpoint's background task).
+    if not IS_SERVERLESS:
+        start_scheduler()
     yield
-    stop_scheduler()
+    if not IS_SERVERLESS:
+        stop_scheduler()
 
 
 app = FastAPI(title=settings.app_name, version="1.0.0", lifespan=lifespan)
