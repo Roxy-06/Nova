@@ -7,6 +7,14 @@ Render (recommended)
 - Connect your GitHub repository to Render and import the `render.yaml` manifest.
 - Set the Render service environment variables/secrets: `DATABASE_URL` (Postgres connection string), `GEMINI_API_KEY` (optional).
 - Render will build the Docker image using `backend/Dockerfile` and expose the app.
+	- The repository now includes both backend and frontend services in `render.yaml`.
+	- After importing, set per-service env vars:
+		- `nova-backend`: `DATABASE_URL`, `GEMINI_API_KEY` (optional), `CORS_ORIGINS` (e.g. your frontend URL)
+		- `nova-frontend`: `NEXT_PUBLIC_API_URL` (e.g. https://your-backend.onrender.com)
+	- For global accessibility and low latency:
+		- Use Render's region nearest your users (or the region you configured in `render.yaml`).
+		- Add a custom domain and enable Render's automatic TLS.
+		- Optionally place Cloudflare (or other CDN) in front of the frontend domain for edge caching.
 
 GitHub Actions CI
 - A workflow is provided at `.github/workflows/ci.yml`. It installs Python, installs `backend/requirements.txt`, and runs `pytest`.

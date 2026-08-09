@@ -17,3 +17,16 @@ services:
     serviceDetails:
       # Use a 3-minute start timeout to allow initial migrations/backfills.
       startCommand: ""
+  - type: web
+    name: nova-frontend
+    env: node
+    branch: main
+    region: oregon
+    plan: free
+    buildCommand: "cd frontend && npm install && npm run build"
+    startCommand: "cd frontend && npm run start"
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: ""
+        sync: false
+    healthCheckPath: /
