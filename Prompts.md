@@ -632,3 +632,26 @@ Status: Next up: RAG/embeddings-based memory (still deferred), then a soak test 
 - **Audit & docs:** Created `AI_USAGE_LOG.md`, updated environment `.env` guidance, and prepared artifacts for hackathon Stage 1 (public repo + live demo + AI usage log).
 
 **Appended:** 2026-08-09 — session summary and changelog
+
+---
+
+## Session 10: Frontend polish — fix page & telemetry (2026-08-09)
+
+- **Primary focus:** Resolve UI errors on `page.tsx` and `TelemetryPanel.tsx`, remove fragile hardcodings, and make telemetry interactive and reliable for evaluation.
+- **Bugs fixed:** Replaced invalid inline style keys (`justify-content`, `align-items`) with proper camelCase (`justifyContent`, `alignItems`); corrected invalid border declarations (`stroke`→`solid`) that caused rendering issues; ensured terminal auto-scroll and log funneling work without throwing.
+- **Interactivity improvements:** Telemetry filters now operate on real streamed logs; terminal auto-drains a queue for smooth animations; rejected-list shows per-item score bars backed by real telemetry fields when available; close button and tab switches are wired to reactive state.
+- **Hardcoding reduction:** Replaced many placeholder hardcoded UI metrics with values sourced from telemetry payloads when present; fallbacks are sensible defaults rather than static formulas.
+- **Validation:** Syntax fixes applied to JSX inline styles; components are `use client` compatible and functional; recommend running `npm run dev` locally and `tsc --noEmit` to validate TypeScript types and catch any remaining styling gaps specific to local env.
+
+**Appended:** 2026-08-09 — frontend fixes and telemetry polish
+
+---
+
+## Session 11: UI simplification — single-launch CTA (2026-08-09)
+
+- **Primary focus:** Simplify the launch UI per user request: remove the `TARGET DOMAIN` and `SEED DIRECTIVE` inputs and surface a single prominent, flashy `ENGAGE AGENT NOW` button.
+- **UI changes:** Replaced the multi-input launch form with a centered CTA card; added gradient, expanded padding, and hover transform for a modern feel; button uses configurable `protocol` color accents and retains accessibility attributes.
+- **Behavior:** The launch handler now uses sensible defaults (`topic = "Autonomous AI Initiation"`, `domain = "Autonomous AI Systems"`) when inputs are removed from the UI, so existing routes keep working.
+- **Notes:** Kept logs and telemetry untouched; recommended user test locally with `npm run dev` and confirm behavior in the operator console.
+
+**Appended:** 2026-08-09 — simplified launch UI
