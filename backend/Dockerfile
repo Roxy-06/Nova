@@ -16,4 +16,7 @@ ENV PORT=8000
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use Gunicorn with Uvicorn workers for production-grade process management.
+# Allow Render to set the PORT envvar; default to 8000.
+ENV PORT=8000
+CMD ["sh", "-c", "gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:$PORT"]

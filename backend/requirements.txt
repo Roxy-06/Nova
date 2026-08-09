@@ -6,3 +6,4 @@ httpx==0.28.1
 feedparser==6.0.11
 psycopg2-binary==2.9.7
 pytest>=7.4.0
+gunicorn==20.1.0

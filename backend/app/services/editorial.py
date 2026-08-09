@@ -320,20 +320,36 @@ async def run_editorial_cycle(db: Session, agent_id: str) -> int:
     return queued_count
 
 
-def _do_publish(db: Session, agent: Agent, post: Post, now: datetime) -> None:
+def _do_publish(db: Session, agent: Agent, post: Post, now: datetime, automatic: bool = True) -> None:
     """Shared release logic used by both the automatic timer-driven publish
-    and the manual "Publish now" action, so both paths number posts and
-    reset the timer identically -- a manual publish is not a special case,
-    it's just a normal publish that happened to be triggered by a click
-    instead of a timer."""
+    and the manual "Publish now" action. Both paths number posts the same
+    way, but automatic publishing for certain feeds enforces a fixed 10-
+    minute cooldown while manual publishes keep the existing randomized
+    cooldown behavior.
+
+    Args:
+        db: Database session (unused here but kept for symmetry).
+        agent: The Agent instance performing the publish.
+        post: The Post being published.
+        now: The current UTC datetime of publish.
+        automatic: True when called from the automatic publisher tick;
+            False when called from a manual "Publish now" action.
+    """
     settings = get_settings()
     agent.post_count += 1
     post.status = "published"
     post.published_at = now
     post.sequence_number = agent.post_count
-    agent.next_publish_at = now + timedelta(
-        minutes=random.uniform(settings.publish_min_minutes, settings.publish_max_minutes)
-    )
+
+    # Enforce a fixed 10-minute cooldown between automatic publishes for
+    # the Jarvis feed only (case-insensitive). Manual publishes keep the
+    # existing randomized cooldown so human intervention remains unchanged.
+    if automatic and agent.name.lower() == "jarvis":
+        agent.next_publish_at = now + timedelta(minutes=10)
+    else:
+        agent.next_publish_at = now + timedelta(
+            minutes=random.uniform(settings.publish_min_minutes, settings.publish_max_minutes)
+        )
 
 
 def publish_due_posts(db: Session, agent_id: str) -> int:
@@ -362,7 +378,9 @@ def publish_due_posts(db: Session, agent_id: str) -> int:
         # forcing an extra full wait on top of an already-elapsed timer.
         return 0
 
-    _do_publish(db, agent, next_post, now)
+    # Explicitly mark this as an automatic publish so `_do_publish` can
+    # apply the Jarvis-specific fixed cooldown regardless of settings.
+    _do_publish(db, agent, next_post, now, automatic=True)
     db.commit()
     return 1
 
@@ -385,6 +403,8 @@ def publish_specific_post(db: Session, agent_id: str, post_id: str) -> bool:
         # ago -- either way there's nothing valid left to do here.
         return False
 
-    _do_publish(db, agent, post, datetime.now(timezone.utc))
+    # Manual publish: indicate `automatic=False` so the manual publish
+    # retains the existing randomized cooldown behavior.
+    _do_publish(db, agent, post, datetime.now(timezone.utc), automatic=False)
     db.commit()
     return True

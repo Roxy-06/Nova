@@ -13,3 +13,7 @@ services:
       - key: GEMINI_API_KEY
         value: ""
         sync: false
+    healthCheckPath: /health
+    serviceDetails:
+      # Use a 3-minute start timeout to allow initial migrations/backfills.
+      startCommand: ""
