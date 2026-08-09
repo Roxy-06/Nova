@@ -7,6 +7,6 @@
     "start": "cd frontend && npm run start"
   },
   "engines": {
-    "node": "24.x"
+    "node": ">=18.17.0"
   }
 }

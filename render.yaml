@@ -32,9 +32,10 @@ services:
     buildCommand: "npm install && npm run build"
     startCommand: "npm run start"
     healthCheckPath: /
+    autoDeploy: true
     envVars:
       - key: NEXT_PUBLIC_API_BASE
-        value: ""
+        value: "https://nova-backend.onrender.com"
         sync: false
       - key: NODE_VERSION
         value: "20"

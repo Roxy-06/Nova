@@ -5,6 +5,8 @@ node_modules/
 # Next.js build output
 .next/
 **/.next/
+frontend/tsconfig.tsbuildinfo
+frontend/ts_errors.txt
 
 # Python
 __pycache__/
@@ -13,6 +15,12 @@ __pycache__/
 venv/
 env/
 
+# SQLite local databases (never commit local state)
+*.db
+*.db-shm
+*.db-wal
+
 # Environment files
 .env
 .env.*
+
