@@ -655,3 +655,121 @@ Status: Next up: RAG/embeddings-based memory (still deferred), then a soak test 
 - **Notes:** Kept logs and telemetry untouched; recommended user test locally with `npm run dev` and confirm behavior in the operator console.
 
 **Appended:** 2026-08-09 — simplified launch UI
+
+# Session 12: Deployment to Production (Render + Vercel) & Serverless Support (2026-08-09/11)
+ 
+**Request:** Deploy to production with persistent backend (Render) + serverless frontend (Vercel), make it work correctly in both models.
+ 
+**Response & Implementation:**
+ 
+**Serverless awareness:**
+- Detected `VERCEL=1` env var in main.py
+- Only start/stop scheduler in persistent processes (local dev, Render container)
+- Serverless requests still trigger editorial work via `/api/agent/init` background tasks
+- Prevents infinite loop errors on Vercel short-lived functions
+**Migration transaction isolation (critical fix):**
+- Each migration now gets its own `engine.connect()` + explicit `trans.begin()`/`trans.rollback()`
+- **Why:** Shared connection meant one duplicate-column error poisoned all subsequent migrations. Fixed so failures are independent.
+**API base URL resolution (new helper):**
+- `frontend/app/lib/api.ts` exports `getApiBase()`
+- Fallback chain: `NEXT_PUBLIC_API_BASE` → `NEXT_PUBLIC_API_URL` → production default (Render URL) → localhost
+- Frontend never hardcodes backend URL; always uses helper
+- Trailing slash auto-stripped so callers can safely append `/api/...`
+**Deployment configuration:**
+- **Render backend:** `nova-i72b.onrender.com` (persistent container, scheduler active 24/7)
+- **Vercel frontend:** `nova-ai-console.vercel.app` (serverless, pointed at Render via env var)
+- Docker config with multistage build, Python 3.11 slim, gunicorn production server
+- Updated `requirements.txt`: added psycopg2-binary (PostgreSQL ready), gunicorn
+**Package structure:**
+- Added `__init__.py` to `app/`, `app/routers/`, `app/services/` (required for relative imports)
+- Root `package.json` with build script (Vercel monorepo detection)
+**Live URLs verified:**
+- ✅ Backend health: `https://nova-i72b.onrender.com/health`
+- ✅ Frontend rendered: `https://nova-ai-console.vercel.app`
+- ✅ Init endpoint working: creates agents on demand
+- ✅ Telemetry streaming: real decisions flowing to frontend
+**Status:** ✅ Complete and live
+ 
+---
+ 
+## Session 13: Dual-Protocol Jarvis vs Ultron UI Architecture (2026-08-11)
+ 
+**Discovery:** User had completely redesigned the landing page with dual-protocol military-tactical aesthetic, fully undocumented.
+ 
+**What exists (not in previous docs):**
+ 
+**Landing Page (page.tsx — 520 lines):**
+- **Dual protocols:** JARVIS (cyan #00f3ff) vs ULTRON (crimson #FF3366)
+- **Protocol toggle:** Changes color scheme, persona profile, operational domain
+- **Scroll-reactive telemetry sidebar:** 
+  - Real-time protocol badge
+  - Scroll position (PX counter)
+  - Neural load % (calculated from scroll depth)
+  - Dynamic threat levels: OPTIMAL → ELEVATED THREAT → CRITICAL OVERRIDE
+- **Three cinematic sections:**
+  1. Hero: Protocol selection, form, launch button
+  2. Neural Core Matrix: 4 interactive clickable cards (Ingestion, Credibility, Deduplication, Synthesis)
+  3. Radar Visualization: Animated holographic reticle with dual-rotating rings, system load display
+- **HUD Design Language:**
+  - Military tactical corner brackets (top-left, top-right, bottom-left, bottom-right)
+  - Monospace telemetry readouts
+  - Glassmorphic sticky header
+  - Glow effects, box-shadow halos
+  - Smooth scroll behavior
+**Console Page (console/page.tsx — 693 lines):**
+- **Undocumented new route:** `/console?agentId=...&mode=JARVIS|ULTRON`
+- **Dual-mode agent persistence:**
+  - Each protocol has its own localStorage key: `novanode_agent_JARVIS` vs `novanode_agent_ULTRON`
+  - Switching protocols preserves separate agents
+  - Auto-initialization if agentId missing (creates agent on first visit)
+- **Three-tab interface:** FEED / QUEUE / DECISIONS (all wired to real backend)
+- **Mode-specific domains:**
+  - JARVIS: "Autonomous AI Systems"
+  - ULTRON: "Autonomous Security & Override Matrix"
+- **Real-time polling:** Telemetry updates every 4 seconds
+- **Full component integration:** QueueView, TelemetryPanel, CountdownTimer, AudioAnnouncer all functional
+**CSS Design System (globals.css — 1,289 lines):**
+- **Protocol color variables:**
+  - JARVIS: cyan (#00f3ff), cyan-dim (rgba 0.15), cyan-glow (rgba 0.45)
+  - ULTRON: crimson (#FF3366), crimson-dim (rgba 0.18), crimson-glow (rgba 0.5)
+  - Shared accent: lime (#00FF66)
+  - Neutral: muted (#a1a69e), ink (#f5f1e9)
+- **Custom scrollbars:** Neon-animated, protocol-aware coloring
+- **Background animations:** Animated shifting grid (gridShift), orb blur effects
+- **Typography:** Manrope (body, 400–800 weights) + DM Mono (technical, monospace)
+- **Responsive:** 1200px breakpoint, glassmorphism panels
+- **Keyframe animations:** rotateRadar (6s), reverseRadar (10s), scanGlitch, pulseGlow
+**Architecture insight:**
+- Landing page (page.tsx) is a cinematic onboarding experience
+- User selects protocol + topic, launches agent
+- Routed to `/console?mode=JARVIS|ULTRON&agentId=...`
+- Console loads agent state, shows real telemetry/queue/feed
+- Both protocols can run simultaneously with separate agents
+**Status:** ✅ Live and working; undocumented in Prompts.md/vibecode_context.md
+ 
+---
+ 
+## Summary: Version 9.0/10
+ 
+**What NOVA actually is (as of August 11, 2026):**
+ 
+- **Dual-protocol tactical AI console** (JARVIS/ULTRON personalities)
+- **Continuous autonomous scanning** (no fixed intervals)
+- **Opinion-driven editorial** (LLM-generated takes with persona)
+- **Publishing queue** (strategic 10–15 min spacing, manual override)
+- **Live telemetry** (unlimited time-windowed decision log)
+- **Production deployed** (Render backend, Vercel frontend)
+- **Serverless-aware** (works on both persistent + short-lived runtimes)
+- **Beautiful UI** (cinematic landing, glassmorphic console, neon HUD aesthetic)
+**Missing for 10.0/10:**
+- RAG-based embeddings memory (still on roadmap)
+- External publishing (webhooks, RSS export)
+- User feedback loop (ratings for learning)
+- Test suite (pytest coverage)
+**Current deployment:**
+- Backend: https://nova-i72b.onrender.com (Render, persistent)
+- Frontend: https://nova-ai-console.vercel.app (Vercel, serverless)
+- Both live and verified working
+---
+ 
+**Last Updated:** August 11, 2026
